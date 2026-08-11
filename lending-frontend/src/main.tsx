@@ -1,6 +1,6 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserProvider, Contract, JsonRpcProvider, formatUnits, parseUnits } from "ethers";
+import { BrowserProvider, Contract, JsonRpcProvider, MaxUint256, formatUnits, parseUnits } from "ethers";
 import { LENDING_POOL_ADDRESS, MARKETS, MarketConfig, TREASURY_ADDRESS, USDG_ADDRESS } from "./markets";
 import "./styles.css";
 
@@ -163,6 +163,8 @@ function App() {
   const [error, setError] = React.useState("");
   const [success, setSuccess] = React.useState("");
   const [pending, setPending] = React.useState("");
+  const [txHash, setTxHash] = React.useState("");
+  const [walletChainId, setWalletChainId] = React.useState("");
   const [form, setForm] = React.useState<Record<TxKind, string>>({ deposit: "1", borrow: "25", repay: "25", withdraw: "1", supply: "100", withdrawLiquidity: "25", supplyEth: "0.1", withdrawEth: "0.05" });
   const [tab, setTab] = React.useState<DeskTab>("dashboard");
   const [filter, setFilter] = React.useState("");
@@ -196,9 +198,9 @@ function App() {
     setPrices(Object.fromEntries(entries.filter(([, v]) => v)) as PriceMap);
   }, []);
 
-  const load = React.useCallback(async (addr = account) => {
-    setLoading(true);
-    setError("");
+  const load = React.useCallback(async (addr = account, silent = false) => {
+    if (!silent) setLoading(true);
+    if (!silent) setError("");
     try {
       // Read all global pool state in parallel, and make each read individually
       // fault-tolerant so one failing call can never blank the whole dashboard.
@@ -288,7 +290,7 @@ function App() {
     } catch (e) {
       setError(cleanError(e));
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [account, feed, market.token, selectedToken]);
 
@@ -310,11 +312,12 @@ function App() {
       const addr = a?.[0] || "";
       setAccount(addr);
     }).catch(() => undefined);
+    window.ethereum?.request({ method: "eth_chainId" }).then((cid: string) => setWalletChainId(typeof cid === "string" ? cid : "")).catch(() => undefined);
     const onAccounts = (a: string[]) => {
       const addr = a?.[0] || "";
       setAccount(addr);
     };
-    const onChain = () => { if (account) void load(account); };
+    const onChain = (cid: string) => { setWalletChainId(typeof cid === "string" ? cid : ""); if (account) void load(account); };
     window.ethereum?.on?.("accountsChanged", onAccounts);
     window.ethereum?.on?.("chainChanged", onChain);
     return () => {
@@ -322,6 +325,12 @@ function App() {
       window.ethereum?.removeListener?.("chainChanged", onChain);
     };
   }, [account, load]);
+  React.useEffect(() => {
+    // Keep balances / health fresh in the background without a loading flicker.
+    if (!account) return;
+    const id = window.setInterval(() => { if (!pending) void load(account, true); }, 45000);
+    return () => window.clearInterval(id);
+  }, [account, pending, load]);
 
   async function ensureWalletReady() {
     if (!window.ethereum) throw new Error("Install an EVM wallet to access the Whitmore Sterling lending floor.");
@@ -354,8 +363,9 @@ function App() {
     const readToken = new Contract(await token.getAddress(), ERC20_ABI, provider);
     const fresh = BigInt(await readToken.allowance(wallet, LENDING_POOL_ADDRESS));
     if (fresh >= amount) return;
-    setPending(`Approving ${label}`);
-    const tx = await token.approve(LENDING_POOL_ADDRESS, amount);
+    setPending(`Approving ${label} (one-time)`);
+    // Approve the pool once (max) so subsequent deposits/repays/supplies are a single tx.
+    const tx = await token.approve(LENDING_POOL_ADDRESS, MaxUint256);
     await tx.wait();
   }
 
@@ -368,7 +378,7 @@ function App() {
 
   async function run(label: string, fn: () => Promise<string>) {
     try {
-      setPending(label); setError(""); setSuccess("");
+      setPending(label); setError(""); setSuccess(""); setTxHash("");
       const msg = await fn();
       setSuccess(msg);
       const accounts = await window.ethereum?.request?.({ method: "eth_accounts" }).catch(() => []);
@@ -387,14 +397,22 @@ function App() {
       const amount = amountFor(kind);
       if (amount <= 0n) throw new Error("Enter an amount above zero.");
       const c = await signerContracts();
-      if (kind === "deposit") { await ensureAllowance(c.stock, amount, market.symbol, c.account); const tx = await c.pool.depositCollateral(market.token, amount); await tx.wait(); return `Deposited ${amt(amount)} ${market.symbol} as collateral.`; }
-      if (kind === "borrow") { const tx = await c.pool.borrow(market.token, amount); await tx.wait(); return `Borrowed ${Number(formatUnits(amount, debtDecimals)).toLocaleString(undefined, { maximumFractionDigits: 6 })} USDG.`; }
-      if (kind === "repay") { await ensureBalance(c.usdg, amount, "USDG", debtDecimals, c.account); await ensureAllowance(c.usdg, amount, "USDG", c.account); const tx = await c.pool.repay(amount); await tx.wait(); return `Repaid ${Number(formatUnits(amount, debtDecimals)).toLocaleString(undefined, { maximumFractionDigits: 6 })} USDG.`; }
-      if (kind === "withdraw") { const tx = await c.pool.withdrawCollateral(market.token, amount); await tx.wait(); return `Withdrew ${amt(amount)} ${market.symbol}.`; }
-      if (kind === "supply") { await ensureBalance(c.usdg, amount, "USDG", debtDecimals, c.account); await ensureAllowance(c.usdg, amount, "USDG", c.account); const tx = await c.pool.supplyLiquidity(amount); await tx.wait(); return `Supplied ${Number(formatUnits(amount, debtDecimals)).toLocaleString(undefined, { maximumFractionDigits: 6 })} USDG to the lending desk.`; }
-      if (kind === "supplyEth") { if (!pool?.ethSupported) throw new Error("This deployed pool does not support native ETH liquidity yet. Deploy the updated contract first."); const tx = await c.pool.supplyEthLiquidity({ value: amount }); await tx.wait(); return `Supplied ${amt(amount)} ETH liquidity.`; }
-      if (kind === "withdrawEth") { if (!pool?.ethSupported) throw new Error("This deployed pool does not support native ETH liquidity yet. Deploy the updated contract first."); const tx = await c.pool.withdrawEthLiquidity(amount); await tx.wait(); return `Withdrew ${amt(amount)} ETH liquidity.`; }
-      const tx = await c.pool.withdrawLiquidity(amount); await tx.wait(); return `Withdrew ${Number(formatUnits(amount, debtDecimals)).toLocaleString(undefined, { maximumFractionDigits: 6 })} USDG liquidity.`;
+      // Simulate first (staticCall) so a doomed call surfaces its reason without being
+      // submitted on-chain and wasting gas; then send and record the tx hash.
+      const exec = async (fnName: string, args: unknown[], value?: bigint) => {
+        const m = (c.pool as any)[fnName];
+        if (value !== undefined) { await m.staticCall(...args, { value }); const tx = await m(...args, { value }); setTxHash(tx.hash); await tx.wait(); }
+        else { await m.staticCall(...args); const tx = await m(...args); setTxHash(tx.hash); await tx.wait(); }
+      };
+      const usdgFmt = (a: bigint) => Number(formatUnits(a, debtDecimals)).toLocaleString(undefined, { maximumFractionDigits: 6 });
+      if (kind === "deposit") { await ensureAllowance(c.stock, amount, market.symbol, c.account); await exec("depositCollateral", [market.token, amount]); return `Deposited ${amt(amount)} ${market.symbol} as collateral.`; }
+      if (kind === "borrow") { await exec("borrow", [market.token, amount]); return `Borrowed ${usdgFmt(amount)} USDG.`; }
+      if (kind === "repay") { await ensureBalance(c.usdg, amount, "USDG", debtDecimals, c.account); await ensureAllowance(c.usdg, amount, "USDG", c.account); await exec("repay", [amount]); return `Repaid ${usdgFmt(amount)} USDG.`; }
+      if (kind === "withdraw") { await exec("withdrawCollateral", [market.token, amount]); return `Withdrew ${amt(amount)} ${market.symbol}.`; }
+      if (kind === "supply") { await ensureBalance(c.usdg, amount, "USDG", debtDecimals, c.account); await ensureAllowance(c.usdg, amount, "USDG", c.account); await exec("supplyLiquidity", [amount]); return `Supplied ${usdgFmt(amount)} USDG to the lending desk.`; }
+      if (kind === "supplyEth") { if (!pool?.ethSupported) throw new Error("This deployed pool does not support native ETH liquidity yet. Deploy the updated contract first."); await exec("supplyEthLiquidity", [], amount); return `Supplied ${amt(amount)} ETH liquidity.`; }
+      if (kind === "withdrawEth") { if (!pool?.ethSupported) throw new Error("This deployed pool does not support native ETH liquidity yet. Deploy the updated contract first."); await exec("withdrawEthLiquidity", [amount]); return `Withdrew ${amt(amount)} ETH liquidity.`; }
+      await exec("withdrawLiquidity", [amount]); return `Withdrew ${usdgFmt(amount)} USDG liquidity.`;
     });
   }
 
@@ -405,6 +423,7 @@ function App() {
   const ethDepositInterestEarned = accountState ? positiveDelta(accountState.ethWithdrawableLiquidity, accountState.suppliedEthLiquidity) : 0n;
   const walletMetric = (value: string) => account ? (accountState ? value : "Reading wallet...") : "Connect wallet";
   const filteredMarkets = MARKETS.filter((m) => `${m.symbol} ${m.name}`.toLowerCase().includes(filter.toLowerCase()));
+  const wrongNetwork = !!account && !!walletChainId && walletChainId.toLowerCase() !== CHAIN.hex;
 
   return <div className="app-frame">
     <aside className="side-rail" aria-label="Primary navigation">
@@ -438,8 +457,11 @@ function App() {
       <div className="topbar-actions"><button className="ghost" onClick={() => setTab("swap")}>Swap</button><button className="ghost" onClick={() => setTab("lending")}>Deposit</button><button className="ghost" onClick={() => setTab("borrow")}>Borrow</button><button className="primary" onClick={() => run("Connecting wallet", async () => { await connect(); return "Wallet connected."; })}>{account ? short(account) : "Enter Whitmore Sterling"}</button></div>
     </div>
 
+    {wrongNetwork && <Notice kind="warn" title="Wrong network" text={`Your wallet is on chain ${walletChainId}. Switch to ${CHAIN.name} (${CHAIN.hex}) to transact.`} />}
+    {oracle?.stale && <Notice kind="warn" title="Oracle stale" text="The selected market's price feed is stale or refreshing — borrowing and liquidation may revert until it updates." />}
     {error && <Notice kind="error" title="Desk alert" text={error} action={() => load(account)} />}
     {success && <Notice kind="success" title="Ticket confirmed" text={success} />}
+    {success && txHash && <a className="terminal-link tx-receipt" href={explorer(txHash, "tx")} target="_blank" rel="noreferrer">View transaction ↗</a>}
 
     <main className="trading-grid">
       {tab === "dashboard" && <DashboardView account={account} accountState={accountState} pool={pool} market={market} prices={prices} health={health} debtDecimals={debtDecimals} connect={() => run("Connecting wallet", async () => { await connect(); return "Wallet connected."; })} />}
@@ -511,6 +533,30 @@ function App() {
 function BorrowTablePage({ markets, selectedMarket, prices, marketState, oracle, accountState, pool, health, debtDecimals, form, setAmount, action, account, pending, loading, expandedSymbol, onToggleMarket, connect }: { markets: MarketConfig[]; selectedMarket: MarketConfig; prices: PriceMap; marketState: MarketState | null; oracle: OracleState | null; accountState: AccountState | null; pool: PoolState | null; health: string; debtDecimals: number; form: Record<TxKind, string>; setAmount: (kind: TxKind, value: string) => void; action: (kind: TxKind) => Promise<void>; account: string; pending: string; loading: boolean; expandedSymbol: string; onToggleMarket: (market: MarketConfig) => void; connect: () => void }) {
   const selectedPrice = prices[selectedMarket.symbol]?.price;
   const selectedStale = prices[selectedMarket.symbol]?.stale || oracle?.stale;
+  const scale = 10n ** BigInt(18 - debtDecimals);
+  const parseUsdg = (s: string) => { try { return parseUnits(s || "0", debtDecimals); } catch { return 0n; } };
+  const fmtUsdg = (v: bigint) => formatUnits(v, debtDecimals);
+  const fmt18 = (v: bigint) => formatUnits(v, 18);
+  // Projected account-wide health factor after borrowing `extra` USDG (18-wad HF).
+  const projectBorrowHF = (extra: bigint): string | null => {
+    if (!accountState) return null;
+    const newDebtWad = (accountState.debt + extra) * scale;
+    if (newDebtWad === 0n) return "∞";
+    return Number(formatUnits(accountState.liquidationLimit * (10n ** 18n) / newDebtWad, 18)).toFixed(2);
+  };
+  const maxBorrow = (): bigint => {
+    if (!accountState || !pool) return 0n;
+    const debtWad = accountState.debt * scale;
+    const availUsdg = (accountState.borrowLimit > debtWad ? accountState.borrowLimit - debtWad : 0n) / scale;
+    const capped = availUsdg < pool.liquidity ? availUsdg : pool.liquidity;
+    return capped * 99n / 100n; // small safety margin against rounding at the limit
+  };
+  const maxRepay = (): bigint => {
+    if (!accountState) return 0n;
+    return accountState.debt < accountState.usdg ? accountState.debt : accountState.usdg;
+  };
+  const projectedBorrowHF = projectBorrowHF(parseUsdg(form.borrow));
+  const borrowHfDanger = projectedBorrowHF !== null && projectedBorrowHF !== "∞" && Number(projectedBorrowHF) < 1.1;
   return <section className="borrow-page panel">
     <div className="panel-head borrow-head"><span>Collateral markets</span><b>{markets.length} visible · click a row to open deposit inputs</b></div>
     <div className="borrow-command-strip">
@@ -556,22 +602,23 @@ function BorrowTablePage({ markets, selectedMarket, prices, marketState, oracle,
             </div>
             <div className="borrow-inline-ticket">
               <label htmlFor="borrow-table-deposit">Deposit collateral</label>
-              <input id="borrow-table-deposit" value={form.deposit} onChange={(e) => setAmount("deposit", e.target.value)} inputMode="decimal" />
+              <div className="ticket-input"><input id="borrow-table-deposit" value={form.deposit} onChange={(e) => setAmount("deposit", e.target.value)} inputMode="decimal" />{accountState && <button type="button" className="max-chip" onClick={() => setAmount("deposit", fmt18(accountState.stock))}>Max</button>}</div>
               <button type="button" onClick={() => action("deposit")} disabled={!!pending}>Deposit {m.symbol}</button>
             </div>
             <div className="borrow-inline-ticket">
               <label htmlFor="borrow-table-borrow">Borrow USDG</label>
-              <input id="borrow-table-borrow" value={form.borrow} onChange={(e) => setAmount("borrow", e.target.value)} inputMode="decimal" />
+              <div className="ticket-input"><input id="borrow-table-borrow" value={form.borrow} onChange={(e) => setAmount("borrow", e.target.value)} inputMode="decimal" />{accountState && pool && <button type="button" className="max-chip" onClick={() => setAmount("borrow", fmtUsdg(maxBorrow()))}>Max</button>}</div>
               <button type="button" onClick={() => action("borrow")} disabled={!!pending || !pool || pool.liquidity === 0n}>Borrow USDG</button>
             </div>
+            {account && accountState && Number(form.borrow) > 0 && <div className={`hf-projection ${borrowHfDanger ? "danger" : ""}`}>Health factor after borrow: <b>{projectedBorrowHF}</b>{projectedBorrowHF !== "∞" && Number(projectedBorrowHF) < 1 ? " — below 1.0; this borrow will revert." : borrowHfDanger ? " — near liquidation, consider a smaller amount." : ""}</div>}
             <div className="borrow-inline-ticket quiet">
               <label htmlFor="borrow-table-repay">Repay</label>
-              <input id="borrow-table-repay" value={form.repay} onChange={(e) => setAmount("repay", e.target.value)} inputMode="decimal" />
+              <div className="ticket-input"><input id="borrow-table-repay" value={form.repay} onChange={(e) => setAmount("repay", e.target.value)} inputMode="decimal" />{accountState && <button type="button" className="max-chip" onClick={() => setAmount("repay", fmtUsdg(maxRepay()))}>Max</button>}</div>
               <button type="button" onClick={() => action("repay")} disabled={!!pending}>Repay</button>
             </div>
             <div className="borrow-inline-ticket quiet">
               <label htmlFor="borrow-table-withdraw">Withdraw collateral</label>
-              <input id="borrow-table-withdraw" value={form.withdraw} onChange={(e) => setAmount("withdraw", e.target.value)} inputMode="decimal" />
+              <div className="ticket-input"><input id="borrow-table-withdraw" value={form.withdraw} onChange={(e) => setAmount("withdraw", e.target.value)} inputMode="decimal" />{accountState && accountState.debt === 0n && <button type="button" className="max-chip" onClick={() => setAmount("withdraw", fmt18(accountState.collateral))}>Max</button>}</div>
               <button type="button" onClick={() => action("withdraw")} disabled={!!pending}>Withdraw</button>
             </div>
           </div>}
@@ -1022,6 +1069,10 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { err
     return this.props.children;
   }
 }
+
+// Lightweight global error capture (logs to console; wire to Sentry/analytics when a DSN is available).
+window.addEventListener("error", (e) => console.error("[Whitmore Sterling] uncaught error", e.error || e.message));
+window.addEventListener("unhandledrejection", (e) => console.error("[Whitmore Sterling] unhandled rejection", e.reason));
 
 createRoot(document.getElementById("root")!).render(<ErrorBoundary><App /></ErrorBoundary>);
 

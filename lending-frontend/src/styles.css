@@ -72,6 +72,21 @@ input::placeholder { color: #8d8985; }
 .global-search { min-height: 40px; border: 1px solid var(--line); border-radius: 999px; background: rgba(3,4,3,.78); display: flex; align-items: center; gap: 6px; padding-left: 14px; color: var(--muted); }
 .global-search input { padding-left: 4px; }
 .topbar-actions { min-width: 0; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: flex-end; }
+
+/* --- Transaction UX additions --- */
+.ticket-input { display: flex; align-items: center; gap: 6px; }
+.ticket-input input { flex: 1; min-width: 0; }
+.max-chip { flex: 0 0 auto; padding: 5px 9px; font-size: .66rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; border: 1px solid rgba(213,180,108,.42); border-radius: 6px; background: rgba(213,180,108,.1); color: #dcbd7c; cursor: pointer; }
+.max-chip:hover { border-color: #dcbd7c; }
+.hf-projection { font-size: .8rem; color: #b9b3a3; padding: 6px 2px 10px; }
+.hf-projection b { color: #dcbd7c; font-variant-numeric: tabular-nums; }
+.hf-projection.danger { color: #e0a34b; }
+.hf-projection.danger b { color: #e0564e; }
+.notice.warn { border-color: rgba(224,163,75,.5); }
+.tx-receipt { display: inline-block; margin: -4px 0 10px; font-size: .82rem; color: #dcbd7c; }
+@media (prefers-reduced-motion: reduce) {
+  .ticker-tape > div { animation: none !important; }
+}
 .ghost { border-color: transparent; background: #0e0e0d; color: #e5e5e7; border-radius: 999px; font-weight: 800; }
 .primary { border-color: var(--accent); background: var(--accent); color: #050505; border-radius: 999px; font-weight: 900; box-shadow: 0 0 24px rgba(155,143,122,.18); }
 .terminal-link { border: 1px solid var(--line); border-radius: 999px; padding: .62rem .95rem; color: #eef7ff; background: rgba(111,120,128,.14); }
