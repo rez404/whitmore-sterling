@@ -1,0 +1,47 @@
+{
+  "network": "robinhoodMainnet",
+  "chainId": 4663,
+  "rpcVerifiedChainId": "0x1237",
+  "explorer": "https://robinhoodchain.blockscout.com",
+  "deployer": "0x898F183eAa0CB61838AE030Fbb7F95488Cd0a7eb",
+  "asset": {
+    "symbol": "USDG",
+    "address": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+    "source": "Robinhood docs core token address from robinhood-stock-tokens skill"
+  },
+  "factory": {
+    "address": "0xC11dEAF70f9B5482a8ac71468ff3738Eecec1Fae",
+    "tx": "0x11ecfa3dfb364d7e0d27f6795a107972b00f63f66cfb25d9517bb85692ec010b",
+    "block": 9203702
+  },
+  "pool": {
+    "address": "0x63F3b47D727Dd1aAdf81F32Cc9Cd2d56946ccF6F",
+    "createTx": "0x6bc5ecac9637f39fe889c05d27fbf01ecb16192cae3251912d14b82901720e96",
+    "createBlock": 9203751,
+    "lpName": "Robinhood USDG Casino LP",
+    "lpSymbol": "rhUSDG-LP",
+    "owner": "0x898F183eAa0CB61838AE030Fbb7F95488Cd0a7eb",
+    "treasury": "0x898F183eAa0CB61838AE030Fbb7F95488Cd0a7eb",
+    "entropyAdmin": "0x898F183eAa0CB61838AE030Fbb7F95488Cd0a7eb",
+    "epoch1Commitment": "0x4193a9108a2de4e5dc13bfacc804129a925ac7752afeb2150307c0a6d25100ff",
+    "epoch1SeedPathLocalOnly": "C:\\Users\\roota\\AppData\\Local\\hermes\\runtime\\gamblefi\\robinhood-gamblefi-epoch1-20260714032423.txt"
+  },
+  "verification": {
+    "factoryCodeBytes": 12745,
+    "poolCodeBytes": 9565,
+    "factoryPoolForAsset": "0x63F3b47D727Dd1aAdf81F32Cc9Cd2d56946ccF6F",
+    "poolCurrentEntropyEpoch": 1,
+    "poolEpoch1Revealed": false,
+    "factoryBlockscoutVerified": true,
+    "poolBlockscoutVerified": true,
+    "factoryExplorerUrl": "https://robinhoodchain.blockscout.com/address/0xC11dEAF70f9B5482a8ac71468ff3738Eecec1Fae#code",
+    "poolExplorerUrl": "https://robinhoodchain.blockscout.com/address/0x63F3b47D727Dd1aAdf81F32Cc9Cd2d56946ccF6F#code",
+    "testCommand": "npm test",
+    "testResult": "11 passing"
+  },
+  "warnings": [
+    "Real-money chance games require legal/compliance review before launch.",
+    "The pasted deployer private key should be considered exposed and rotated after this deployment.",
+    "First entropy seed is intentionally not committed; keep the local seed file secure or replace entropy flow before production use."
+  ]
+}

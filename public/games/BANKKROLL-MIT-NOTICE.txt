@@ -1,0 +1,2 @@
+BankkRoll Gamba-V2-Next.js game UI/assets are MIT licensed. Source: https://github.com/BankkRoll/Gamba-V2-Next.js
+Copyright (c) 2024 Bankk

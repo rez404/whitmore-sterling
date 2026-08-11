@@ -1,0 +1,131 @@
+{
+  "network": "robinhoodMainnet",
+  "chainId": 4663,
+  "rpcVerifiedChainId": "0x1237",
+  "explorer": "https://robinhoodchain.blockscout.com",
+  "asset": {
+    "symbol": "WETH",
+    "address": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+    "displaySymbol": "ETH"
+  },
+  "factory": {
+    "address": "0xC11dEAF70f9B5482a8ac71468ff3738Eecec1Fae"
+  },
+  "pool": {
+    "address": "0xe3cA6CC4cEe6C13F8442793705BC31638fad63D2",
+    "lpName": "Robinhood WETH Casino LP",
+    "lpSymbol": "rhWETH-LP",
+    "owner": "0x898F183eAa0CB61838AE030Fbb7F95488Cd0a7eb",
+    "treasury": "0x898F183eAa0CB61838AE030Fbb7F95488Cd0a7eb",
+    "entropyAdmin": "0x898F183eAa0CB61838AE030Fbb7F95488Cd0a7eb",
+    "epoch1SeedPathLocalOnly": "C:\\Users\\roota\\AppData\\Local\\hermes\\runtime\\gamblefi\\robinhood-gamblefi-weth-epoch1-20260714065655.txt"
+  },
+  "games": [
+    {
+      "id": "1",
+      "name": "Lucky Litter Dice",
+      "active": true,
+      "minWager": "0.001",
+      "maxWager": "0.05",
+      "maxMultiplierBps": "57000"
+    },
+    {
+      "id": "2",
+      "name": "Meow Slots",
+      "active": true,
+      "minWager": "0.001",
+      "maxWager": "0.05",
+      "maxMultiplierBps": "30000"
+    },
+    {
+      "id": "3",
+      "name": "Cat Coin Flip",
+      "active": true,
+      "minWager": "0.001",
+      "maxWager": "0.1",
+      "maxMultiplierBps": "18500"
+    },
+    {
+      "id": "4",
+      "name": "Nine Lives HiLo",
+      "active": true,
+      "minWager": "0.001",
+      "maxWager": "0.05",
+      "maxMultiplierBps": "22000"
+    },
+    {
+      "id": "5",
+      "name": "Alley Mines",
+      "active": true,
+      "minWager": "0.001",
+      "maxWager": "0.05",
+      "maxMultiplierBps": "30000"
+    },
+    {
+      "id": "6",
+      "name": "Catnip Roulette",
+      "active": true,
+      "minWager": "0.001",
+      "maxWager": "0.02",
+      "maxMultiplierBps": "65000"
+    },
+    {
+      "id": "7",
+      "name": "Yarn Plinko",
+      "active": true,
+      "minWager": "0.001",
+      "maxWager": "0.05",
+      "maxMultiplierBps": "22000"
+    },
+    {
+      "id": "8",
+      "name": "Rocket Cat Crash",
+      "active": true,
+      "minWager": "0.001",
+      "maxWager": "0.05",
+      "maxMultiplierBps": "24000"
+    },
+    {
+      "id": "9",
+      "name": "Black Cat Jack",
+      "active": true,
+      "minWager": "0.001",
+      "maxWager": "0.05",
+      "maxMultiplierBps": "24000"
+    },
+    {
+      "id": "10",
+      "name": "Fat Cat Jackpot",
+      "active": true,
+      "minWager": "0.001",
+      "maxWager": "0.01",
+      "maxMultiplierBps": "65000"
+    },
+    {
+      "id": "11",
+      "name": "Kitten Plinko Race",
+      "active": true,
+      "minWager": "0.001",
+      "maxWager": "0.02",
+      "maxMultiplierBps": "18000"
+    },
+    {
+      "id": "12",
+      "name": "Tomcat PvP Flip",
+      "active": true,
+      "minWager": "0.001",
+      "maxWager": "0.1",
+      "maxMultiplierBps": "18500"
+    }
+  ],
+  "verification": {
+    "poolCodeBytes": 9565,
+    "totalAssets": "0.0",
+    "unlockedAssets": "0.0",
+    "lockedLiability": "0.0",
+    "lpTotalSupply": "0.0",
+    "currentEntropyEpoch": "1",
+    "epochRevealed": false,
+    "listedGames": 12
+  }
+}
