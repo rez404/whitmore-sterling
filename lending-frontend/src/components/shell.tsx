@@ -58,7 +58,7 @@ export function Sidebar({ tab, setTab }: { tab: DeskTab; setTab: (t: DeskTab) =>
   return (
     <aside className="sticky top-0 hidden h-screen w-[252px] shrink-0 flex-col gap-7 border-r border-line bg-surface px-3 py-5 lg:flex">
       <a href="#top" className="flex items-center gap-3 px-2" aria-label="Whitmore Sterling — home">
-        <img src="/wolf.svg" alt="" className="size-9 shrink-0" />
+        <img src="/whitmore-mark.svg" alt="" className="size-10 shrink-0" />
         <span className="min-w-0">
           <span className="block truncate text-[15px] leading-tight font-semibold tracking-tight text-ink">
             Whitmore Sterling

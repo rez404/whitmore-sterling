@@ -72,6 +72,28 @@ export const VAULT_ABI = [
   "function performanceFeeBps() view returns (uint256)",
 ];
 
+export const ZAP_ABI = [
+  "function zapIn(address vault,address tokenIn,uint256 amountIn,(address tokenIn,address tokenOut,uint24 fee,uint256 amountIn,uint256 amountOutMinimum)[] legs,uint256 amount0Min,uint256 amount1Min) payable returns (uint256 shares)",
+];
+
+export const V3_POOL_ABI = ["function fee() view returns (uint24)"];
+
+export const MULTI_STAKING_ABI = [
+  "function stake(uint256)",
+  "function withdraw(uint256)",
+  "function getReward()",
+  "function exit()",
+  "function balanceOf(address) view returns (uint256)",
+  "function totalSupply() view returns (uint256)",
+  "function stakingToken() view returns (address)",
+  "function getRewardTokens() view returns (address[])",
+  "function earnedAll(address) view returns (address[] tokens,uint256[] amounts)",
+  "function rewardData(address) view returns (address distributor,uint256 duration,uint256 periodFinish,uint256 rate,uint256 lastUpdateTime,uint256 rewardPerTokenStored)",
+  "function performanceFeeBps() view returns (uint256)",
+  "function unstakeFeeBps() view returns (uint256)",
+  "function earnedStaking(address) view returns (uint256)",
+];
+
 export const STAKING_ABI = [
   "function stake(uint256)",
   "function withdraw(uint256)",

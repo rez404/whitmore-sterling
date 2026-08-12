@@ -3,14 +3,15 @@ import { createRoot } from "react-dom/client";
 import { BrowserProvider, Contract, MaxUint256, formatUnits, parseUnits } from "ethers";
 import { ExternalLink } from "lucide-react";
 import { LENDING_POOL_ADDRESS, MARKETS, TREASURY_ADDRESS, USDG_ADDRESS, type MarketConfig } from "./markets";
-import { PLATFORM_TOKEN, STAKING_POOL, type VaultPool } from "./farms";
+import { LP_ZAP, PLATFORM_TOKEN, STAKING_VAULT, type VaultPool } from "./farms";
 import {
   CHAIN,
   ERC20_ABI,
   FEED_ABI,
   POOL_ABI,
-  STAKING_ABI,
+  MULTI_STAKING_ABI,
   VAULT_ABI,
+  ZAP_ABI,
   poolRead,
   provider,
   usdgRead,
@@ -23,6 +24,16 @@ import {
   type TxKind,
 } from "./lib/chain";
 import { explorer } from "./lib/format";
+import {
+  GAS_BUFFER_WEI,
+  UNISWAP,
+  buildZapLegs,
+  executeSwap,
+  fullRangeAmounts,
+  minAmounts,
+  minOut,
+  type Quote,
+} from "./lib/uniswap";
 import { Alert } from "./components/ui/misc";
 import { Button } from "./components/ui/button";
 import { MobileNav, Sidebar, Ticker, Topbar } from "./components/shell";
@@ -42,6 +53,7 @@ declare global {
 
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
+
 async function readWithRetry<T>(fn: () => Promise<T>, attempts = 4): Promise<T> {
   let last: any;
   for (let i = 0; i < attempts; i += 1) {
@@ -59,8 +71,23 @@ async function readWithRetry<T>(fn: () => Promise<T>, attempts = 4): Promise<T> 
 }
 
 function cleanError(e: any) {
+  // Always keep the raw error reachable — the mapped copy below is deliberately
+  // lossy, and without this a mis-mapped message hides the real cause.
+  console.error("[Whitmore Sterling] error", e);
   const msg = e?.shortMessage || e?.reason || e?.message || "Transaction failed";
   if (msg.includes("user rejected")) return "Wallet request rejected.";
+
+  // Uniswap V3 router/pool reverts, checked before the generic RPC mapping so a
+  // real trade failure is never reported as a network problem.
+  if (msg.includes("STF"))
+    return "The swap could not pull your tokens. Check the balance and that the approval confirmed, then try again.";
+  if (msg.includes("Too little received") || msg.includes("Too much requested"))
+    return "Price moved past the 1% slippage limit while the trade was in flight. Re-quote and submit again.";
+  if (msg.includes("Transaction too old"))
+    return "The trade sat too long and its deadline passed. Submit it again.";
+  if (msg.includes("SPL")) return "The pool hit its price limit on this trade. Try a smaller amount.";
+  if (msg.includes("IIA") || msg.includes("AS"))
+    return "This pool has too little liquidity for that size. Try a smaller amount or another asset.";
   if (msg.includes("OracleStale"))
     return "The selected stock feed is stale. Wait for market data to refresh before taking risk.";
   if (msg.includes("OraclePaused"))
@@ -73,8 +100,10 @@ function cleanError(e: any) {
   if (msg.includes("MarketNotBorrowable")) return "Borrowing is disabled for this stock token.";
   if (msg.includes("LiquidationAmountTooHigh"))
     return "Liquidation amount is above the target-health-factor maximum.";
-  if (msg.includes("missing revert data") || msg.includes("Too Many Requests") || msg.includes("429"))
-    return "RPC read failed while loading contract data. Wait a few seconds and retry; the app is reducing background calls now.";
+  if (msg.includes("Too Many Requests") || msg.includes("429"))
+    return "The RPC is rate-limiting us. Wait a few seconds and retry — background calls are already throttled.";
+  if (msg.includes("missing revert data"))
+    return "The contract call reverted without giving a reason. Usually this means the balance, allowance, or pool liquidity will not support this amount. Try a smaller size.";
   if (msg.includes("DustyRemainingDebt"))
     return "That action would leave dust debt. Use a larger repay/liquidation amount.";
   if (msg.includes("InsufficientLiquidity")) return "The USDG lending desk has no available liquidity for that amount.";
@@ -115,7 +144,7 @@ function App() {
   const [tab, setTab] = React.useState<DeskTab>("dashboard");
   const [filter, setFilter] = React.useState("");
   const [prices, setPrices] = React.useState<PriceMap>({});
-  const [swapAmount, setSwapAmount] = React.useState("0.1");
+  const [swapAmount, setSwapAmount] = React.useState("");
   const [debtDecimals, setDebtDecimals] = React.useState(6);
   const [expandedBorrowSymbol, setExpandedBorrowSymbol] = React.useState(MARKETS[0].symbol);
 
@@ -558,41 +587,61 @@ function App() {
     });
   }
 
-  // Native on-site swap via Sushi's routing API on Robinhood Chain: the API returns the
-  // optimal route + encoded router tx; we approve (for ERC-20 inputs) and sign it in-wallet.
-  async function sushiSwap(tokenIn: string, tokenOut: string, amountWei: bigint, isNative: boolean, label: string) {
+  // Direct Uniswap V3 execution — quote comes from QuoterV2, the trade goes
+  // straight to the SwapRouter. No aggregator sits in the middle.
+  async function uniswapSwap(
+    tokenIn: string,
+    tokenOut: string,
+    amountWei: bigint,
+    isNative: boolean,
+    label: string,
+    quote: Quote,
+  ) {
     return run("Swapping", async () => {
       const { signer, addr } = await ensureWalletReady();
-      const url = `https://api.sushi.com/swap/v7/${Number(CHAIN.id)}?tokenIn=${tokenIn}&tokenOut=${tokenOut}&amount=${amountWei.toString()}&maxSlippage=0.01&sender=${addr}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("Sushi routing is unavailable right now. Try again shortly.");
-      const quote = await res.json();
-      if (quote.status !== "Success" || !quote.tx) throw new Error("Sushi found no route for this pair or amount.");
-      const router: string = quote.tx.to;
+
+      // Check funds before simulating. A `staticCall` carrying more value than the
+      // account holds reverts with no reason data, which is impossible to read.
+      const fmtEth = (v: bigint) => Number(formatUnits(v, 18)).toLocaleString(undefined, { maximumFractionDigits: 6 });
+      if (isNative) {
+        const bal = await readWithRetry(() => provider.getBalance(addr), 3);
+        if (bal < amountWei + GAS_BUFFER_WEI)
+          throw new Error(
+            `Not enough ETH. This trade needs ${fmtEth(amountWei)} plus gas, and the wallet holds ${fmtEth(bal)}.`,
+          );
+      } else {
+        const bal = BigInt(
+          await readWithRetry(() => new Contract(tokenIn, ERC20_ABI, provider).balanceOf(addr), 3),
+        );
+        if (bal < amountWei)
+          throw new Error(`Not enough balance for this trade. The wallet holds ${fmtEth(bal)} of the input token.`);
+      }
+
       if (!isNative) {
-        const allowance = BigInt(await new Contract(tokenIn, ERC20_ABI, provider).allowance(addr, router));
+        const allowance = BigInt(
+          await readWithRetry(() => new Contract(tokenIn, ERC20_ABI, provider).allowance(addr, UNISWAP.router), 3),
+        );
         if (allowance < amountWei) {
           setPending("Approving swap (one-time)");
-          const at = await new Contract(tokenIn, ERC20_ABI, signer).approve(router, MaxUint256);
+          const at = await new Contract(tokenIn, ERC20_ABI, signer).approve(UNISWAP.router, MaxUint256);
           await at.wait();
         }
       }
       setPending("Confirm swap in wallet");
-      const tx = await signer.sendTransaction({
-        to: router,
-        data: quote.tx.data,
-        value: quote.tx.value ? BigInt(quote.tx.value) : 0n,
+      const tx = await executeSwap(signer, {
+        tokenIn: isNative ? UNISWAP.weth9 : tokenIn,
+        tokenOut,
+        amountIn: amountWei,
+        amountOutMinimum: minOut(quote.amountOut, 100),
+        recipient: addr,
+        quote,
+        isNative,
       });
       setTxHash(tx.hash);
       await tx.wait();
-      const outDec = quote.tokens?.[quote.tokenTo]?.decimals ?? 18;
-      const outSym = quote.tokens?.[quote.tokenTo]?.symbol ?? "tokens";
-      const out = quote.assumedAmountOut
-        ? Number(formatUnits(BigInt(quote.assumedAmountOut), outDec)).toLocaleString(undefined, {
-            maximumFractionDigits: 6,
-          })
-        : "";
-      return `Swapped ${label} for ~${out} ${outSym}.`;
+      return `Swapped ${label} for ~${Number(formatUnits(quote.amountOut, 18)).toLocaleString(undefined, {
+        maximumFractionDigits: 6,
+      })} tokens.`;
     });
   }
 
@@ -614,12 +663,64 @@ function App() {
           }
         }
       }
+      // Work out what the position will really consume at the current pool price and
+      // floor it. Sending zero minimums lets anyone move the price in front of the
+      // deposit and hand the depositor fewer shares than they paid for.
+      const expected = await fullRangeAmounts(
+        vaultPool.token0,
+        vaultPool.token1,
+        vaultPool.feeTier,
+        amount0,
+        amount1,
+      );
+      if (!expected) throw new Error("Could not read the pool price for this pair. Try again in a moment.");
+      const { amount0Min, amount1Min } = minAmounts(expected, 100); // 1%
+
       setPending("Confirm deposit in wallet");
-      await v.deposit.staticCall(amount0, amount1, 0, 0);
-      const tx = await v.deposit(amount0, amount1, 0, 0);
+      await v.deposit.staticCall(amount0, amount1, amount0Min, amount1Min);
+      const tx = await v.deposit(amount0, amount1, amount0Min, amount1Min);
       setTxHash(tx.hash);
       await tx.wait();
       return "Deposited liquidity into the vault.";
+    });
+  }
+
+  /** One-token entry: swap into both sides and deposit, in a single transaction. */
+  async function vaultZap(vaultPool: VaultPool, tokenIn: string, amountIn: bigint, isNative: boolean, label: string) {
+    return run("Zapping in", async () => {
+      if (!LP_ZAP) throw new Error("The zap contract is not deployed yet.");
+      const { signer, addr } = await ensureWalletReady();
+
+      const swapToken = isNative ? UNISWAP.weth9 : tokenIn;
+      const legs = await buildZapLegs(swapToken, amountIn, vaultPool);
+      if (!legs) throw new Error("No route found to build this position. Try a different asset or a smaller size.");
+
+      if (isNative) {
+        const bal = await readWithRetry(() => provider.getBalance(addr), 3);
+        if (bal < amountIn + GAS_BUFFER_WEI)
+          throw new Error(
+            `Not enough ETH. This zap needs ${Number(formatUnits(amountIn, 18)).toLocaleString(undefined, { maximumFractionDigits: 6 })} plus gas.`,
+          );
+      } else {
+        const allowance = BigInt(
+          await readWithRetry(() => new Contract(tokenIn, ERC20_ABI, provider).allowance(addr, LP_ZAP), 3),
+        );
+        if (allowance < amountIn) {
+          setPending("Approving (one-time)");
+          const at = await new Contract(tokenIn, ERC20_ABI, signer).approve(LP_ZAP, MaxUint256);
+          await at.wait();
+        }
+      }
+
+      setPending("Confirm in wallet");
+      const zap = new Contract(LP_ZAP, ZAP_ABI, signer);
+      const args = [vaultPool.vault, swapToken, amountIn, legs, 0n, 0n];
+      const overrides = isNative ? { value: amountIn } : {};
+      await zap.zapIn.staticCall(...args, overrides);
+      const tx = await zap.zapIn(...args, overrides);
+      setTxHash(tx.hash);
+      await tx.wait();
+      return `Zapped ${label} into the ${vaultPool.symbol}/USDG vault.`;
     });
   }
 
@@ -627,8 +728,14 @@ function App() {
     return run("Withdrawing", async () => {
       const { signer } = await ensureWalletReady();
       const v = new Contract(vaultPool.vault, VAULT_ABI, signer);
-      await v.withdraw.staticCall(shares, 0, 0);
-      const tx = await v.withdraw(shares, 0, 0);
+      // The withdrawal removes a proportional slice, so the floor is derived from the
+      // position rather than from a quote — but it must not be zero either.
+      const totalSupply = BigInt(await new Contract(vaultPool.vault, VAULT_ABI, provider).totalSupply());
+      const liquidity = BigInt(await new Contract(vaultPool.vault, VAULT_ABI, provider).positionLiquidity());
+      const share = totalSupply > 0n ? (liquidity * shares) / totalSupply : 0n;
+      const floor = (share * 99n) / 100n; // 1% tolerance on each side
+      await v.withdraw.staticCall(shares, floor, floor);
+      const tx = await v.withdraw(shares, floor, floor);
       setTxHash(tx.hash);
       await tx.wait();
       return "Withdrew liquidity from the vault.";
@@ -638,12 +745,14 @@ function App() {
   async function stakeAction(kind: "stake" | "unstake" | "claim", amount: bigint) {
     return run(kind === "claim" ? "Claiming rewards" : kind === "stake" ? "Staking" : "Unstaking", async () => {
       const { signer, addr } = await ensureWalletReady();
-      const s = new Contract(STAKING_POOL, STAKING_ABI, signer);
+      const s = new Contract(STAKING_VAULT, MULTI_STAKING_ABI, signer);
       if (kind === "stake") {
-        const allowance = BigInt(await new Contract(PLATFORM_TOKEN, ERC20_ABI, provider).allowance(addr, STAKING_POOL));
+        const allowance = BigInt(
+          await new Contract(PLATFORM_TOKEN, ERC20_ABI, provider).allowance(addr, STAKING_VAULT),
+        );
         if (allowance < amount) {
           setPending("Approving (one-time)");
-          const at = await new Contract(PLATFORM_TOKEN, ERC20_ABI, signer).approve(STAKING_POOL, MaxUint256);
+          const at = await new Contract(PLATFORM_TOKEN, ERC20_ABI, signer).approve(STAKING_VAULT, MaxUint256);
           await at.wait();
         }
         setPending("Confirm stake in wallet");
@@ -661,7 +770,7 @@ function App() {
       const tx = await s.getReward();
       setTxHash(tx.hash);
       await tx.wait();
-      return "Claimed partner rewards.";
+      return "Claimed all partner rewards.";
     });
   }
 
@@ -820,7 +929,7 @@ function App() {
               accountState={accountState}
               debtDecimals={debtDecimals}
               pending={pending}
-              sushiSwap={sushiSwap}
+              uniswapSwap={uniswapSwap}
               onSelectMarket={setMarket}
             />
           )}
@@ -834,6 +943,7 @@ function App() {
               prices={prices}
               deposit={vaultDeposit}
               withdraw={vaultWithdraw}
+              zap={vaultZap}
             />
           )}
 

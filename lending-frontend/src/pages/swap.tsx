@@ -8,7 +8,8 @@ import { Figure, Section } from "@/src/components/ui/table";
 import { TokenIcon, TokenSelect } from "@/src/components/ui/token";
 import { PageHeader } from "@/src/components/shell";
 import { cn } from "@/src/lib/utils";
-import { CHAIN, type AccountState, type PriceMap } from "@/src/lib/chain";
+import { type AccountState, type PriceMap } from "@/src/lib/chain";
+import { GAS_BUFFER_WEI, UNISWAP, minOut, quoteBest, type Quote } from "@/src/lib/uniswap";
 import { amt, explorer, pct, priceFmt, short, timeAgo } from "@/src/lib/format";
 import { MARKETS, USDG_ADDRESS, type MarketConfig } from "@/src/markets";
 
@@ -24,7 +25,7 @@ export function SwapPage({
   accountState,
   debtDecimals,
   pending,
-  sushiSwap,
+  uniswapSwap,
   onSelectMarket,
 }: {
   market: MarketConfig;
@@ -36,7 +37,14 @@ export function SwapPage({
   accountState: AccountState | null;
   debtDecimals: number;
   pending: string;
-  sushiSwap: (tokenIn: string, tokenOut: string, amountWei: bigint, isNative: boolean, label: string) => Promise<void>;
+  uniswapSwap: (
+    tokenIn: string,
+    tokenOut: string,
+    amountWei: bigint,
+    isNative: boolean,
+    label: string,
+    quote: Quote,
+  ) => Promise<void>;
   onSelectMarket: (m: MarketConfig) => void;
 }) {
   const inputs = React.useMemo(
@@ -49,7 +57,7 @@ export function SwapPage({
   const [inKey, setInKey] = React.useState("ETH");
   const input = inputs.find((i) => i.key === inKey) || inputs[0];
   const outMarket = market;
-  const [quote, setQuote] = React.useState<any>(null);
+  const [quote, setQuote] = React.useState<Quote | null>(null);
   const [quoting, setQuoting] = React.useState(false);
   const [quoteErr, setQuoteErr] = React.useState("");
   const [copied, setCopied] = React.useState(false);
@@ -68,20 +76,19 @@ export function SwapPage({
     const timer = window.setTimeout(async () => {
       try {
         const amountWei = parseUnits(raw, input.decimals);
-        const sender = account || "0x0000000000000000000000000000000000000001";
-        const url = `https://api.sushi.com/swap/v7/${Number(CHAIN.id)}?tokenIn=${input.address}&tokenOut=${outMarket.token}&amount=${amountWei.toString()}&maxSlippage=0.01&sender=${sender}`;
-        const res = await fetch(url);
-        const q = res.ok ? await res.json() : null;
+        // Native ETH quotes against the WETH9 pool — the router wraps on the way in.
+        const tokenIn = input.native ? UNISWAP.weth9 : input.address;
+        const q = await quoteBest(tokenIn, outMarket.token, amountWei, input.key, outMarket.symbol);
         if (cancelled) return;
-        if (q && q.status === "Success") setQuote(q);
+        if (q) setQuote(q);
         else {
           setQuote(null);
-          setQuoteErr("No route for this pair at this size.");
+          setQuoteErr("No Uniswap pool with depth for this pair at this size.");
         }
       } catch {
         if (!cancelled) {
           setQuote(null);
-          setQuoteErr("Quote unavailable. Try again.");
+          setQuoteErr("Quote failed. Try again.");
         }
       } finally {
         if (!cancelled) setQuoting(false);
@@ -91,23 +98,31 @@ export function SwapPage({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [amount, inKey, outMarket.token, account, input.address, input.decimals]);
+  }, [amount, inKey, outMarket.token, outMarket.symbol, input.address, input.decimals, input.native, input.key]);
 
-  const outDec = quote?.tokens?.[quote.tokenTo]?.decimals ?? 18;
-  const outAmount = quote?.assumedAmountOut
-    ? Number(formatUnits(BigInt(quote.assumedAmountOut), outDec)).toLocaleString(undefined, {
-        maximumFractionDigits: 6,
-      })
+  const outAmount = quote
+    ? Number(formatUnits(quote.amountOut, 18)).toLocaleString(undefined, { maximumFractionDigits: 6 })
     : "";
-  const impact = quote?.priceImpact != null ? Number(quote.priceImpact) : null;
+  const impact = quote?.priceImpact ?? null;
   const balance = input.native ? accountState?.eth : accountState?.usdg;
   const oraclePrice = prices[outMarket.symbol];
+  const received = quote
+    ? Number(formatUnits(minOut(quote.amountOut, 100), 18)).toLocaleString(undefined, { maximumFractionDigits: 6 })
+    : "";
 
   const doSwap = async () => {
     if (!account) return connect();
     const raw = (amount || "").trim();
     if (!raw || Number(raw) <= 0) return;
-    await sushiSwap(input.address, outMarket.token, parseUnits(raw, input.decimals), input.native, `${raw} ${input.key}`);
+    if (!quote) return;
+    await uniswapSwap(
+      input.address,
+      outMarket.token,
+      parseUnits(raw, input.decimals),
+      input.native,
+      `${raw} ${input.key}`,
+      quote,
+    );
   };
 
   const copyAddress = () => {
@@ -120,7 +135,7 @@ export function SwapPage({
     <div className="space-y-5">
       <PageHeader
         title="Swap"
-        description="Buy tokenized equities with ETH or USDG. Routed live through Sushi; your wallet signs the router transaction."
+        description="Buy tokenized equities with ETH or USDG, directly against Uniswap V3 pools. Quotes come from the on-chain quoter; your wallet signs the router transaction."
       />
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,460px)_minmax(0,1fr)]">
@@ -142,10 +157,17 @@ export function SwapPage({
                 account && balance != null ? (
                   <button
                     type="button"
-                    onClick={() => setAmount(formatUnits(balance, input.decimals))}
+                    onClick={() => {
+                      const spendable = input.native
+                        ? balance > GAS_BUFFER_WEI
+                          ? balance - GAS_BUFFER_WEI
+                          : 0n
+                        : balance;
+                      setAmount(formatUnits(spendable, input.decimals));
+                    }}
                     className="text-[13px] text-ink-3 transition-colors hover:text-accent"
                   >
-                    Balance {amt(balance, input.native ? 5 : 2, input.decimals)} · Max
+                    Balance {amt(balance, input.native ? 5 : 2, input.decimals)} · Max{input.native ? " (less gas)" : ""}
                   </button>
                 ) : (
                   <span className="text-[13px] text-ink-4">Connect to see balance</span>
@@ -209,8 +231,19 @@ export function SwapPage({
                       value={impact == null ? "—" : `${(impact * 100).toFixed(2)}%`}
                       tone={impact == null ? undefined : impact > 0.05 ? "bad" : impact > 0.01 ? "warn" : undefined}
                     />
+                    <Line label="Minimum received" value={`${received} ${outMarket.symbol}`} />
                     <Line label="Max slippage" value="1.00%" />
-                    <Line label="Router" value={quote?.tx?.to ? short(quote.tx.to) : "Sushi RouteProcessor"} />
+                    <Line
+                      label="Route"
+                      value={
+                        quote
+                          ? quote.fee != null
+                            ? `${quote.hops.join(" → ")} · ${(quote.fee / 10000).toFixed(2)}%`
+                            : quote.hops.join(" → ")
+                          : "—"
+                      }
+                    />
+                    <Line label="Venue" value="Uniswap V3" />
                   </>
                 )}
               </div>

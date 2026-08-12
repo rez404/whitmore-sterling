@@ -10,6 +10,10 @@ const SIZES = { xs: "size-4", sm: "size-5", md: "size-7", lg: "size-9", xl: "siz
  * (USDG, ETH, an unlisted token) falls back to a lettered chip so rows never
  * collapse to a broken-image icon.
  */
+// Stock marks ship as SVG, partner tokens as raster from their listing. Try each
+// in turn rather than forcing one format on assets we do not control.
+const EXTENSIONS = ["svg", "png"] as const;
+
 export function TokenIcon({
   symbol,
   size = "md",
@@ -19,9 +23,10 @@ export function TokenIcon({
   size?: keyof typeof SIZES;
   className?: string;
 }) {
-  const [failed, setFailed] = React.useState(false);
+  const [attempt, setAttempt] = React.useState(0);
   const sym = (symbol || "?").toUpperCase();
-  React.useEffect(() => setFailed(false), [sym]);
+  React.useEffect(() => setAttempt(0), [sym]);
+  const failed = attempt >= EXTENSIONS.length;
 
   if (failed) {
     return (
@@ -39,12 +44,12 @@ export function TokenIcon({
   }
   return (
     <img
-      src={`/tokens/${sym}.svg`}
+      src={`/tokens/${sym}.${EXTENSIONS[attempt]}`}
       alt=""
       aria-hidden="true"
       loading="lazy"
-      onError={() => setFailed(true)}
-      className={cn(SIZES[size], "shrink-0 rounded-full", className)}
+      onError={() => setAttempt((a) => a + 1)}
+      className={cn(SIZES[size], "shrink-0 rounded-full object-cover", className)}
     />
   );
 }

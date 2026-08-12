@@ -9,7 +9,15 @@
     "build": "tsc -p tsconfig.app.json && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "deploy:robinhood": "hardhat run scripts/deploy.ts --network robinhoodMainnet",
-    "deploy:gamblefi:robinhood": "hardhat run scripts/deploy-gamblefi.ts --network robinhoodMainnet"
+    "deploy:gamblefi:robinhood": "hardhat run scripts/deploy-gamblefi.ts --network robinhoodMainnet",
+    "deploy:staking": "hardhat run scripts/deploy-staking.ts --network robinhoodMainnet",
+    "deploy:staking:dry": "DRY_RUN=1 hardhat run scripts/deploy-staking.ts --network robinhoodMainnet",
+    "deploy:vaults": "hardhat run scripts/deploy-vaults.ts --network robinhoodMainnet",
+    "deploy:vaults:dry": "DRY_RUN=1 hardhat run scripts/deploy-vaults.ts --network robinhoodMainnet",
+    "fork:node": "anvil --fork-url https://rpc.mainnet.chain.robinhood.com --port 8545 --silent",
+    "test:fork": "hardhat test test/fork/stock-lp-vault.fork.spec.ts --network anvilFork",
+    "deploy:zap": "hardhat run scripts/deploy-zap.ts --network robinhoodMainnet",
+    "deploy:zap:dry": "DRY_RUN=1 hardhat run scripts/deploy-zap.ts --network robinhoodMainnet"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.6.1",

@@ -5,11 +5,11 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC20Burnable} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
-/// @notice Whitmore Sterling platform token — staked on the single-stake page to earn partner rewards.
-/// @dev Placeholder name/ticker; confirm before mainnet deploy. Owner can mint for future incentives.
+/// @notice Whitmore Sterling platform token ($STERLING) — staked to earn partner reward tokens.
+/// @dev Owner can mint for future incentives; point ownership at the multisig before launch.
 contract WhitmoreToken is ERC20, ERC20Burnable, Ownable {
     constructor(address initialOwner, uint256 initialSupply)
-        ERC20("Whitmore Sterling", "WHIT")
+        ERC20("Whitmore Sterling", "STERLING")
         Ownable(initialOwner)
     {
         require(initialOwner != address(0), "zero owner");
