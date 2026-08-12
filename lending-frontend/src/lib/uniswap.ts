@@ -270,6 +270,58 @@ export type ZapLeg = {
 };
 
 /**
+ * Deposit floors for a zap, derived from what the legs are *guaranteed* to leave
+ * in the contract.
+ *
+ * The legs protect the swaps, but the deposit that follows them was passing
+ * zero on both sides. That is the gap an attacker uses: move the pool price
+ * between the last swap and the deposit and the position consumes one side at a
+ * bad rate, so the depositor's shares are worth less than they put in while the
+ * difference accrues to the existing holders. The leftovers coming back hide it.
+ *
+ * Each leg's `amountOutMinimum` is enforced on-chain, so replaying the legs over
+ * a balance sheet gives the minimum holdings the deposit will see. A full-range
+ * position consumes a balanced pair almost entirely, so a floor a little under
+ * those holdings never fires on ordinary drift but does catch a shifted price.
+ */
+export async function zapMinimums(
+  tokenIn: string,
+  amountIn: bigint,
+  legs: ZapLeg[],
+  pair: { token0: string; token1: string },
+  vaultFee: number,
+  toleranceBps = 500,
+): Promise<{ amount0Min: bigint; amount1Min: bigint }> {
+  const held = new Map<string, bigint>();
+  const key = (a: string) => a.toLowerCase();
+  const add = (a: string, v: bigint) => held.set(key(a), (held.get(key(a)) ?? 0n) + v);
+
+  add(tokenIn, amountIn);
+  for (const leg of legs) {
+    add(leg.tokenIn, -leg.amountIn);
+    add(leg.tokenOut, leg.amountOutMinimum);
+  }
+  const at = (a: string) => {
+    const v = held.get(key(a)) ?? 0n;
+    return v > 0n ? v : 0n;
+  };
+  const held0 = at(pair.token0);
+  const held1 = at(pair.token1);
+
+  // The floors cannot be a share of the holdings: the swaps take the best-priced
+  // pool, the vault deposits into its own, and when those are different fee tiers
+  // the ratio does not match — the position then consumes far less of one side and
+  // a naive floor reverts a perfectly good deposit. Price the holdings against the
+  // vault's own pool to get what will actually be consumed.
+  const expected = await fullRangeAmounts(pair.token0, pair.token1, vaultFee, held0, held1);
+  if (!expected) {
+    // Pool unreadable — keep a coarse guard rather than dropping to zero.
+    return { amount0Min: held0 / 2n, amount1Min: held1 / 2n };
+  }
+  return minAmounts(expected, toleranceBps);
+}
+
+/**
  * Swap legs that turn a single asset into both sides of a pair.
  *
  * A full-range position wants equal value on each side, so the input is split down

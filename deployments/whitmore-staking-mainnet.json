@@ -1,0 +1,20 @@
+{
+  "network": "robinhoodMainnet",
+  "chainId": 4663,
+  "deployedAt": "2026-08-12T18:43:03.954Z",
+  "deployer": "0x049ee24bFd7581d34E7D0f20BE62B6a625BaF5CF",
+  "owner": "0x049ee24bFd7581d34E7D0f20BE62B6a625BaF5CF",
+  "feeRecipient": "0x049ee24bFd7581d34E7D0f20BE62B6a625BaF5CF",
+  "platformToken": "0xAEE5405B417C1825c29DcAa770ab3A4eE3eeC798",
+  "platformTokenReused": true,
+  "platformSupply": null,
+  "stakingVault": "0xfAD7a60a648fab6ab7a32c703F583344Dc662a4c",
+  "rewardDuration": 604800,
+  "rewardTokensRegistered": [],
+  "rewardTokensPending": [],
+  "notes": [
+    "MultiRewardStaking is unaudited. Do not promote it until an audit is complete.",
+    "Partners fund their own stream: approve the vault, then call notifyRewardAmount(token, amount).",
+    "Rewards streamed while nothing is staked stay locked in the contract and cannot be recovered."
+  ]
+}

@@ -47,6 +47,7 @@ const config: HardhatUserConfig = {
     // fork is driven by anvil and Hardhat simply talks to it as a normal node.
     //   anvil --fork-url https://rpc.mainnet.chain.robinhood.com --port 8545
     anvilFork: { url: "http://127.0.0.1:8545", chainId: 4663 },
+    anvilFork2: { url: "http://127.0.0.1:8546", chainId: 4663 },
   },
   etherscan: {
     apiKey: { robinhoodMainnet: process.env.BLOCKSCOUT_API_KEY || "unused" },

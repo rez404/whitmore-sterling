@@ -33,6 +33,7 @@ import {
   fullRangeAmounts,
   minAmounts,
   minOut,
+  zapMinimums,
   type Quote,
 } from "./lib/uniswap";
 import { Alert } from "./components/ui/misc";
@@ -716,7 +717,11 @@ function App() {
 
       setPending("Confirm in wallet");
       const zap = new Contract(LP_ZAP, ZAP_ABI, signer);
-      const args = [vaultPool.vault, swapToken, amountIn, legs, 0n, 0n];
+      // The legs guard the swaps; these guard the deposit that follows them. The
+      // tier comes from the vault itself — the pairs are not all on the same one.
+      const vaultFee = Number(await new Contract(vaultPool.vault, VAULT_ABI, provider).fee());
+      const { amount0Min, amount1Min } = await zapMinimums(swapToken, amountIn, legs, vaultPool, vaultFee);
+      const args = [vaultPool.vault, swapToken, amountIn, legs, amount0Min, amount1Min];
       const overrides = isNative ? { value: amountIn } : {};
       await zap.zapIn.staticCall(...args, overrides);
       const tx = await zap.zapIn(...args, overrides);

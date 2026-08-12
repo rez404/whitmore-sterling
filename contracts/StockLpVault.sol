@@ -119,8 +119,19 @@ contract StockLpVault is ERC20, Ownable, ReentrancyGuard, Pausable {
                 amount0Min: amount0Min, amount1Min: amount1Min, deadline: block.timestamp
             }));
             addedLiquidity = liq; used0 = a0; used1 = a1;
-            require(liqBefore > 0, "no liquidity");
-            shares = uint256(liq) * totalSupply() / liqBefore;
+            // An emptied vault re-bootstraps. Once the last holder withdraws, the
+            // position NFT still exists but holds nothing and no shares are
+            // outstanding, so there is nothing to be proportional to: the old
+            // `liqBefore > 0` requirement made the first full exit brick the vault
+            // for good. With no supply, one share is one unit of liquidity again —
+            // the same rule the very first deposit uses.
+            uint256 supplyBefore = totalSupply();
+            if (supplyBefore == 0) {
+                shares = liq;
+            } else {
+                require(liqBefore > 0, "no liquidity");
+                shares = uint256(liq) * supplyBefore / liqBefore;
+            }
         }
         require(shares > 0, "zero shares");
         _mint(msg.sender, shares);

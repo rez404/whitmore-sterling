@@ -156,6 +156,22 @@ describe("StockLpVault (full-range Uniswap V3 vault)", function () {
     expect(await token0.balanceOf(alice.address)).to.be.gt(0);
   });
 
+  // Also found on mainnet: after the only depositor withdrew in full, the SPCX vault
+  // sat at positionId=2, totalSupply=0, liquidity=0 — and every further deposit
+  // reverted with "no liquidity". A vault that dies the first time it empties is not
+  // a vault; the emptied state has to be indistinguishable from a fresh one.
+  it("still accepts deposits after every holder has withdrawn", async function () {
+    const { alice, bob, vault } = await fixture();
+    await vault.connect(alice).deposit(e18("100"), e18("100"), 0, 0);
+    await vault.connect(alice).withdraw(await vault.balanceOf(alice.address), 0, 0);
+    expect(await vault.totalSupply()).to.equal(0);
+
+    await expect(vault.connect(bob).deposit(e18("60"), e18("60"), 0, 0)).to.not.be.reverted;
+    // Re-bootstrapped on the same rule as the first ever deposit: 1 share = 1 unit.
+    expect(await vault.balanceOf(bob.address)).to.equal(await vault.positionLiquidity());
+    await expect(vault.connect(bob).withdraw(await vault.balanceOf(bob.address), 0, 0)).to.not.be.reverted;
+  });
+
   it("reinvests again as soon as both sides have fees", async function () {
     const { alice, vault, npm } = await fixture();
     await vault.connect(alice).deposit(e18("100"), e18("100"), 0, 0);
