@@ -1,5 +1,5 @@
 import { ethers, network } from "hardhat";
-import { writeFileSync } from "fs";
+import { readFileSync, writeFileSync } from "fs";
 import { resolve } from "path";
 import { STOCK_MARKETS } from "./stock-markets";
 
@@ -187,7 +187,19 @@ async function main() {
       "The platform keeps 10% of collected trading fees. Deposits themselves are never charged.",
     ],
   };
+  // Merge rather than overwrite: this script is run repeatedly as pairs are added,
+  // and a fresh write would erase the record of everything deployed before.
   const out = resolve(__dirname, "../deployments/whitmore-lp-vaults-mainnet.json");
+  let previous: any = { vaults: [] };
+  try {
+    previous = JSON.parse(readFileSync(out, "utf8"));
+  } catch {
+    /* first run */
+  }
+  const bySymbol = new Map<string, any>();
+  for (const v of previous.vaults ?? []) bySymbol.set(v.symbol, v);
+  for (const v of record.vaults) bySymbol.set(v.symbol, v);
+  record.vaults = [...bySymbol.values()];
   writeFileSync(out, JSON.stringify(record, null, 2));
   console.log("\nrecord written to", out);
 

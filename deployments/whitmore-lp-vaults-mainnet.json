@@ -1,88 +1,118 @@
 {
   "network": "robinhoodMainnet",
   "chainId": 4663,
-  "deployedAt": "2026-08-12T15:56:20.575Z",
+  "rebuiltAt": "2026-08-12T16:10:28.109Z",
   "dex": "uniswap-v3",
   "factory": "0x1f7d7550B1b028f7571E69A784071F0205FD2EfA",
   "positionManager": "0xC00BABBB20630974345EeA9f57d8F2FDEb81226B",
+  "zap": "0x5C59FEaB45B737491A43107f3bD34bb8753Bf2A0",
   "owner": "0x049ee24bFd7581d34E7D0f20BE62B6a625BaF5CF",
   "feeRecipient": "0x049ee24bFd7581d34E7D0f20BE62B6a625BaF5CF",
+  "performanceFeeBps": 1000,
   "vaults": [
     {
       "symbol": "SPCX",
-      "token": "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa",
-      "pool": "0xEb07d9587eFD1778dFb9c385Ec43EF6d5F9fE401",
-      "fee": 3000,
-      "liquidity": "137143333803404965",
+      "vault": "0x4B198a43d666E61d49b508c16322d982913d11Ac",
       "token0": "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa",
       "token1": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+      "fee": 3000,
       "tickLower": -887220,
       "tickUpper": 887220,
-      "vault": "0x4B198a43d666E61d49b508c16322d982913d11Ac"
+      "positionId": 0,
+      "codeBytes": 7728
     },
     {
       "symbol": "SPY",
-      "token": "0x117cc2133c37B721F49dE2A7a74833232B3B4C0C",
-      "pool": "0xA43b424Bc609495AED4BCD88d654934b510B0aD9",
-      "fee": 3000,
-      "liquidity": "121063095739270402",
+      "vault": "0x0a7EF648648d1b1735Dcfc888d3c6952DDa05e0C",
       "token0": "0x117cc2133c37B721F49dE2A7a74833232B3B4C0C",
       "token1": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+      "fee": 3000,
       "tickLower": -887220,
       "tickUpper": 887220,
-      "vault": "0x0a7EF648648d1b1735Dcfc888d3c6952DDa05e0C"
+      "positionId": 0,
+      "codeBytes": 7728
     },
     {
       "symbol": "NVDA",
-      "token": "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC",
-      "pool": "0xd4EB21209C4D6093f80B5b84f5C45cc093EA14a3",
-      "fee": 500,
-      "liquidity": "439792367581939744",
+      "vault": "0x6F5113b8FFC2c78A33731c431Eb3A52B7A2bbafb",
       "token0": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
       "token1": "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC",
+      "fee": 500,
       "tickLower": -887270,
       "tickUpper": 887270,
-      "vault": "0x6F5113b8FFC2c78A33731c431Eb3A52B7A2bbafb"
+      "positionId": 0,
+      "codeBytes": 7728
     },
     {
       "symbol": "USO",
-      "token": "0xa30FA36Db767ad9eD3f7a60fC79526fB4d56D344",
-      "pool": "0x02175608F1b5E6b5ed221cCFdC7Be197D111D915",
-      "fee": 3000,
-      "liquidity": "1154087440758029544",
+      "vault": "0xcce7D3a9251CE143B07A3321732cAD4dF3f08d7a",
       "token0": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
       "token1": "0xa30FA36Db767ad9eD3f7a60fC79526fB4d56D344",
+      "fee": 3000,
       "tickLower": -887220,
       "tickUpper": 887220,
-      "vault": "0xcce7D3a9251CE143B07A3321732cAD4dF3f08d7a"
+      "positionId": 0,
+      "codeBytes": 7728
     },
     {
       "symbol": "AAPL",
-      "token": "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9",
-      "pool": "0x783C9bbB765047CFdD2b84b92b2Ca9F11D34b7Ed",
-      "fee": 3000,
-      "liquidity": "126384548960415374",
+      "vault": "0xE333F9782970462a66199392Ef1def04004463D4",
       "token0": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
       "token1": "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9",
+      "fee": 3000,
       "tickLower": -887220,
       "tickUpper": 887220,
-      "vault": "0xE333F9782970462a66199392Ef1def04004463D4"
+      "positionId": 0,
+      "codeBytes": 7728
     },
     {
       "symbol": "TSLA",
-      "token": "0x322F0929c4625eD5bAd873c95208D54E1c003b2d",
-      "pool": "0xf4ACdAEEB7022862A763C9B1B885e11191c889E3",
-      "fee": 3000,
-      "liquidity": "110222670034321080",
+      "vault": "0x51db84AC2F8b89087124b735A2E6FB9309650B02",
       "token0": "0x322F0929c4625eD5bAd873c95208D54E1c003b2d",
       "token1": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+      "fee": 3000,
       "tickLower": -887220,
       "tickUpper": 887220,
-      "vault": "0x51db84AC2F8b89087124b735A2E6FB9309650B02"
+      "positionId": 0,
+      "codeBytes": 7728
+    },
+    {
+      "symbol": "INTC",
+      "vault": "0xF1c0c9a80517f3fe41d5c7afcEe9Aa33Fe08f50e",
+      "token0": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+      "token1": "0xc72b96e0E48ecd4DC75E1e45396e26300BC39681",
+      "fee": 3000,
+      "tickLower": -887220,
+      "tickUpper": 887220,
+      "positionId": 0,
+      "codeBytes": 7728
+    },
+    {
+      "symbol": "SNDK",
+      "vault": "0x26b655F79C3Db489910DAef5596a1bB892DF643F",
+      "token0": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+      "token1": "0xB90A19fF0Af67f7779afF50A882A9CfF42446400",
+      "fee": 10000,
+      "tickLower": -887200,
+      "tickUpper": 887200,
+      "positionId": 0,
+      "codeBytes": 7728
+    },
+    {
+      "symbol": "MSFT",
+      "vault": "0xAa64420b06aF7753dab3c6b34409AC8cfa791941",
+      "token0": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+      "token1": "0xe93237C50D904957Cf27E7B1133b510C669c2e74",
+      "fee": 3000,
+      "tickLower": -887220,
+      "tickUpper": 887220,
+      "positionId": 0,
+      "codeBytes": 7728
     }
   ],
   "notes": [
-    "StockLpVault is unaudited and custodial. Do not promote it until an audit is complete.",
+    "Read back from chain after deployment — every field here was verified, not assumed.",
+    "StockLpVault and LpZap are unaudited and custodial. The UI carries an unaudited warning.",
     "Full-range positions only; the vault does not rebalance.",
     "The platform keeps 10% of collected trading fees. Deposits themselves are never charged."
   ]

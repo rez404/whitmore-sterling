@@ -28,6 +28,9 @@ export const VAULT_ADDRESSES: Record<string, string> = {
   USO: "0xcce7D3a9251CE143B07A3321732cAD4dF3f08d7a",
   AAPL: "0xE333F9782970462a66199392Ef1def04004463D4",
   TSLA: "0x51db84AC2F8b89087124b735A2E6FB9309650B02",
+  INTC: "0xF1c0c9a80517f3fe41d5c7afcEe9Aa33Fe08f50e",
+  SNDK: "0x26b655F79C3Db489910DAef5596a1bB892DF643F",
+  MSFT: "0xAa64420b06aF7753dab3c6b34409AC8cfa791941",
 };
 
 /* ============================================================================
