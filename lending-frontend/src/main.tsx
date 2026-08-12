@@ -105,7 +105,8 @@ const POOL_ABI = [
 ];
 
 const READ_RPC = typeof window === "undefined" ? CHAIN.rpc : `${window.location.origin}/api/rpc`;
-const provider = new JsonRpcProvider(READ_RPC, Number(CHAIN.id), { batchMaxCount: 1 });
+// Batch reads into JSON-RPC arrays (the proxy forwards batches) to cut request volume and avoid 429s.
+const provider = new JsonRpcProvider(READ_RPC, Number(CHAIN.id), { batchMaxCount: 10, batchStallTime: 50 });
 const poolRead = new Contract(LENDING_POOL_ADDRESS, POOL_ABI, provider);
 const usdgRead = new Contract(USDG_ADDRESS, ERC20_ABI, provider);
 
@@ -328,7 +329,7 @@ function App() {
   React.useEffect(() => {
     // Keep balances / health fresh in the background without a loading flicker.
     if (!account) return;
-    const id = window.setInterval(() => { if (!pending) void load(account, true); }, 45000);
+    const id = window.setInterval(() => { if (!pending) void load(account, true); }, 90000);
     return () => window.clearInterval(id);
   }, [account, pending, load]);
 
