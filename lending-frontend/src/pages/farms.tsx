@@ -22,6 +22,8 @@ export function FarmsPage({
   deposit,
   withdraw,
   zap,
+  selectedSymbol,
+  onSelect,
 }: {
   account: string;
   connect: () => void;
@@ -31,9 +33,11 @@ export function FarmsPage({
   deposit: (pool: VaultPool, a0: bigint, a1: bigint) => Promise<void>;
   withdraw: (pool: VaultPool, shares: bigint) => Promise<void>;
   zap: (pool: VaultPool, tokenIn: string, amountIn: bigint, isNative: boolean, label: string) => Promise<void>;
+  selectedSymbol: string;
+  onSelect: (symbol: string) => void;
 }) {
-  const [openSym, setOpenSym] = React.useState("");
   const [stats, setStats] = React.useState<Record<string, PairStats>>({});
+  const [myShares, setMyShares] = React.useState<Record<string, bigint>>({});
   const [feeTiers, setFeeTiers] = React.useState<Record<string, number>>({});
   const [loading, setLoading] = React.useState(true);
 
@@ -69,6 +73,37 @@ export function FarmsPage({
     };
   }, []);
 
+  // Which vaults the connected wallet is actually in, so a depositor does not have
+  // to open every pair to find their money.
+  React.useEffect(() => {
+    if (!account) {
+      setMyShares({});
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      const live = LP_VAULTS.filter((v) => v.vault);
+      const out: Record<string, bigint> = {};
+      await Promise.all(
+        live.map(async (v) => {
+          try {
+            const bal = await new Contract(v.vault, VAULT_ABI, provider).balanceOf(account);
+            if (BigInt(bal) > 0n) out[v.symbol] = BigInt(bal);
+          } catch {
+            /* skip this vault */
+          }
+        }),
+      );
+      if (!cancelled) setMyShares(out);
+    };
+    load();
+    const id = window.setInterval(load, 60000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [account]);
+
   const rows = LP_VAULTS.map((pool) => {
     const st = stats[pool.stock.toLowerCase()];
     const tier = st ? feeTiers[st.pairAddress.toLowerCase()] : undefined;
@@ -76,7 +111,11 @@ export function FarmsPage({
     return { pool, st, tier, apr };
   });
 
-  const selected = rows.find((r) => r.pool.symbol === openSym);
+  const selected = rows.find((r) => r.pool.symbol === selectedSymbol);
+  const byVolume = (a: FarmRow, b: FarmRow) => (b.st?.volume.h24 ?? 0) - (a.st?.volume.h24 ?? 0);
+  const withVault = rows.filter((r) => r.pool.vault).sort(byVolume);
+  const withoutVault = rows.filter((r) => !r.pool.vault && r.st).sort(byVolume);
+  const myPositions = rows.filter((r) => myShares[r.pool.symbol]);
   const totalTvl = rows.reduce((s, r) => s + (r.st?.liquidityUsd ?? 0), 0);
   const totalVol = rows.reduce((s, r) => s + (r.st?.volume.h24 ?? 0), 0);
   const totalFees = rows.reduce((s, r) => s + (r.st && r.tier != null ? r.st.volume.h24 * r.tier : 0), 0);
@@ -92,7 +131,7 @@ export function FarmsPage({
         deposit={deposit}
         withdraw={withdraw}
         zap={zap}
-        onBack={() => setOpenSym("")}
+        onBack={() => onSelect("")}
       />
     );
   }
@@ -111,94 +150,165 @@ export function FarmsPage({
         <Figure
           label="Vaults live"
           value={`${LP_VAULTS.filter((v) => v.vault).length} / ${LP_VAULTS.length}`}
-          hint="Awaiting deployment"
-          tone="warn"
+          hint={`${LP_VAULTS.filter((v) => v.vault).length} deployed`}
         />
       </FigureRow>
 
-      <Alert tone="info" title="Vaults are not deployed yet">
-        The pool data below is live from Uniswap. The vault contracts that would deposit on your behalf are written and
-        tested but not yet audited or deployed, so nothing can be deposited from here.
-      </Alert>
 
-      <Section title="Equity pairs" meta="Sorted by 24h volume · fees shown are what the whole pool earned">
-        {loading ? (
-          <div className="space-y-2 py-2">
-            {[0, 1, 2].map((i) => (
-              <Skeleton key={i} className="h-14" />
-            ))}
-          </div>
-        ) : (
+      {myPositions.length > 0 && (
+        <Section title="Your positions" meta={`${myPositions.length} vault${myPositions.length > 1 ? "s" : ""}`}>
           <DataTable
             head={
               <>
                 <Th>Pair</Th>
-                <Th align="right">Fee tier</Th>
-                <Th align="right">TVL</Th>
-                <Th align="right">Volume 24h</Th>
-                <Th align="right">Fees 24h</Th>
+                <Th align="right">Your shares</Th>
                 <Th align="right">Fee APR</Th>
-                <Th align="right">Status</Th>
+                <Th align="right" />
               </>
             }
           >
             <tbody>
-              {rows
-                .slice()
-                .sort((a, b) => (b.st?.volume.h24 ?? 0) - (a.st?.volume.h24 ?? 0))
-                .map(({ pool, st, tier, apr }) => (
-                  <tr
-                    key={pool.symbol}
-                    onClick={() => st && setOpenSym(pool.symbol)}
-                    className={cn(
-                      "border-b border-line last:border-0 transition-colors",
-                      st ? "cursor-pointer hover:bg-[var(--color-hover)]" : "opacity-50",
-                    )}
-                  >
-                    <Td>
-                      <span className="flex items-center gap-3">
-                        <TokenPair a={pool.symbol} b="USDG" size="lg" />
-                        <span className="min-w-0">
-                          <span className="block font-semibold text-ink">{pool.symbol} / USDG</span>
-                          <span className="block truncate text-[14px] text-ink-3">
-                            {pool.name.replace(" Stock Token", "").replace(" ETF Token", "")}
-                          </span>
-                        </span>
-                      </span>
-                    </Td>
-                    <Td align="right">{tier != null ? `${(tier * 100).toFixed(2)}%` : "—"}</Td>
-                    <Td align="right">
-                      <Num>
-                        <Money value={st?.liquidityUsd} decimals={0} />
-                      </Num>
-                    </Td>
-                    <Td align="right">
-                      <Money value={st?.volume.h24} decimals={0} />
-                    </Td>
-                    <Td align="right">
-                      {st && tier != null ? <Money value={st.volume.h24 * tier} decimals={0} /> : "—"}
-                    </Td>
-                    <Td align="right">
-                      {apr != null ? <Num className="text-up">{apr.toFixed(1)}%</Num> : <span className="text-ink-4">—</span>}
-                    </Td>
-                    <Td align="right">
-                      <Status tone={pool.vault ? "good" : "idle"}>{pool.vault ? "Live" : "Pending"}</Status>
-                    </Td>
-                  </tr>
-                ))}
+              {myPositions.map(({ pool, apr }) => (
+                <tr
+                  key={pool.symbol}
+                  onClick={() => onSelect(pool.symbol)}
+                  className="cursor-pointer border-b border-line transition-colors last:border-0 hover:bg-[var(--color-hover)]"
+                >
+                  <Td>
+                    <span className="flex items-center gap-3">
+                      <TokenPair a={pool.symbol} b="USDG" size="lg" />
+                      <span className="font-semibold text-ink">{pool.symbol} / USDG</span>
+                    </span>
+                  </Td>
+                  <Td align="right">
+                    <Num>{amt(myShares[pool.symbol] ?? 0n, 4)}</Num>
+                  </Td>
+                  <Td align="right">
+                    {apr != null ? <Num className="text-up">{apr.toFixed(1)}%</Num> : "—"}
+                  </Td>
+                  <Td align="right">
+                    <span className="text-[14px] text-ink-3">Manage →</span>
+                  </Td>
+                </tr>
+              ))}
             </tbody>
           </DataTable>
-        )}
-        <p className="pt-1 text-[13px] leading-snug text-ink-4">
-          Fee APR annualises the last 24 hours of volume. Volume is volatile, so treat it as a snapshot rather than a
-          forecast. It also describes the whole pool — a full-range position earns less than a concentrated one.
-        </p>
-      </Section>
+        </Section>
+      )}
+
+      {loading ? (
+        <div className="space-y-2 py-2">
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-14" />
+          ))}
+        </div>
+      ) : (
+        <>
+          <Section
+            title="Vaults"
+            meta={`${withVault.length} live · deposit and the vault manages the position for you`}
+          >
+            {withVault.length === 0 ? (
+              <p className="py-2 text-[15px] text-ink-4">No vaults deployed yet.</p>
+            ) : (
+              <PairTable rows={withVault} onSelect={onSelect} />
+            )}
+          </Section>
+
+          {/* The pools without a vault are still worth showing: this table is the only
+              place these yields are visible anywhere, and it is where the next vault
+              gets chosen from. */}
+          <Section
+            title="Other pools"
+            meta={`${withoutVault.length} pairs trading on Uniswap · no vault yet`}
+          >
+            <PairTable rows={withoutVault} onSelect={onSelect} muted />
+          </Section>
+        </>
+      )}
+
+      <p className="text-[13px] leading-snug text-ink-4">
+        Fee APR annualises the last 24 hours of volume. Volume is volatile, so treat it as a snapshot rather than a
+        forecast. It also describes the whole pool — a full-range position earns less than a concentrated one.
+      </p>
     </div>
   );
 }
 
 type FarmRow = { pool: VaultPool; st?: PairStats; tier?: number; apr: number | null };
+
+function PairTable({
+  rows,
+  onSelect,
+  muted,
+}: {
+  rows: FarmRow[];
+  onSelect: (symbol: string) => void;
+  muted?: boolean;
+}) {
+  return (
+    <DataTable
+      head={
+        <>
+          <Th>Pair</Th>
+          <Th align="right">Fee tier</Th>
+          <Th align="right">TVL</Th>
+          <Th align="right">Volume 24h</Th>
+          <Th align="right">Fees 24h</Th>
+          <Th align="right">Fee APR</Th>
+          <Th align="right">Status</Th>
+        </>
+      }
+    >
+      <tbody>
+        {rows.map(({ pool, st, tier, apr }) => (
+          <tr
+            key={pool.symbol}
+            onClick={() => st && onSelect(pool.symbol)}
+            className={cn(
+              "border-b border-line last:border-0 transition-colors",
+              st ? "cursor-pointer hover:bg-[var(--color-hover)]" : "opacity-50",
+            )}
+          >
+            <Td>
+              <span className="flex items-center gap-3">
+                <TokenPair a={pool.symbol} b="USDG" size="lg" />
+                <span className="min-w-0">
+                  <span className={cn("block font-semibold", muted ? "text-ink-2" : "text-ink")}>
+                    {pool.symbol} / USDG
+                  </span>
+                  <span className="block truncate text-[14px] text-ink-3">
+                    {pool.name.replace(" Stock Token", "").replace(" ETF Token", "")}
+                  </span>
+                </span>
+              </span>
+            </Td>
+            <Td align="right">{tier != null ? `${(tier * 100).toFixed(2)}%` : "—"}</Td>
+            <Td align="right">
+              <Num>
+                <Money value={st?.liquidityUsd} decimals={0} />
+              </Num>
+            </Td>
+            <Td align="right">
+              <Money value={st?.volume.h24} decimals={0} />
+            </Td>
+            <Td align="right">{st && tier != null ? <Money value={st.volume.h24 * tier} decimals={0} /> : "—"}</Td>
+            <Td align="right">
+              {apr != null ? (
+                <Num className={muted ? "text-ink-2" : "text-up"}>{apr.toFixed(1)}%</Num>
+              ) : (
+                <span className="text-ink-4">—</span>
+              )}
+            </Td>
+            <Td align="right">
+              <Status tone={pool.vault ? "good" : "idle"}>{pool.vault ? "Live" : "No vault"}</Status>
+            </Td>
+          </tr>
+        ))}
+      </tbody>
+    </DataTable>
+  );
+}
 
 function FarmDetail({
   row,
@@ -374,9 +484,9 @@ function FarmDetail({
 
       <Section title="Add liquidity">
         {!pool.vault ? (
-          <Alert tone="warn" title="This vault is not deployed">
-            The pool above is live and earning fees, but the vault that would manage a position on your behalf has not
-            been deployed or audited yet.
+          <Alert tone="warn" title="No vault for this pair yet">
+            This pool is live and earning fees, but no vault has been deployed for it. Vaults exist for the
+            highest-volume pairs; the rest can be added later.
           </Alert>
         ) : (
           <div className="max-w-2xl space-y-4">
@@ -443,55 +553,163 @@ function FarmDetail({
               </Button>
             </div>
             )}
-            <VaultPosition pool={pool} account={account} pending={pending} withdraw={withdraw} />
           </div>
         )}
         <p className="pt-1 text-[13px] leading-relaxed text-ink-4">
           Providing liquidity is not the same as holding. If {pool.symbol} moves sharply against USDG you end up with
-          more of the side that fell — impermanent loss — which can outweigh the fees earned.
+          more of the side that fell — impermanent loss — which can outweigh the fees earned. The vault contract is
+          unaudited and custodial.
         </p>
+      </Section>
+
+      <Section title="Your position" meta={`${pool.symbol} / USDG vault`}>
+        <div className="max-w-2xl">
+          <VaultPosition pool={pool} account={account} pending={pending} withdraw={withdraw} symbol={pool.symbol} />
+        </div>
       </Section>
     </div>
   );
 }
 
+/**
+ * A depositor's position in one vault.
+ *
+ * The amounts are not estimated: `withdraw` is simulated against the vault with the
+ * caller's own address, so the two numbers shown are exactly what the contract would
+ * hand back right now, fees included.
+ */
 function VaultPosition({
   pool,
   account,
   pending,
   withdraw,
+  symbol,
 }: {
   pool: VaultPool;
   account: string;
   pending: string;
   withdraw: (pool: VaultPool, shares: bigint) => Promise<void>;
+  symbol: string;
 }) {
   const [shares, setShares] = React.useState(0n);
+  const [totalSupply, setTotalSupply] = React.useState(0n);
+  const [pct, setPct] = React.useState(100);
+  const [preview, setPreview] = React.useState<{ amount0: bigint; amount1: bigint } | null>(null);
+  const [stockIsToken0, setStockIsToken0] = React.useState(true);
+
   React.useEffect(() => {
     if (!account || !pool.vault) return;
     let cancelled = false;
-    new Contract(pool.vault, VAULT_ABI, provider)
-      .balanceOf(account)
-      .then((b: bigint) => {
-        if (!cancelled) setShares(BigInt(b));
-      })
-      .catch(() => undefined);
+    const load = async () => {
+      try {
+        const v = new Contract(pool.vault, VAULT_ABI, provider);
+        const [bal, supply, t0] = await Promise.all([v.balanceOf(account), v.totalSupply(), v.token0()]);
+        if (cancelled) return;
+        setShares(BigInt(bal));
+        setTotalSupply(BigInt(supply));
+        setStockIsToken0(String(t0).toLowerCase() === pool.stock.toLowerCase());
+      } catch {
+        /* rpc hiccup — leave the previous values */
+      }
+    };
+    load();
+    const id = window.setInterval(load, 30000);
     return () => {
       cancelled = true;
+      window.clearInterval(id);
     };
-  }, [pool.vault, account]);
+  }, [pool.vault, pool.stock, account]);
 
-  if (!account || shares === 0n)
-    return <p className="border-t border-line pt-3 text-[13.5px] text-ink-4">No vault position yet.</p>;
+  const selected = (shares * BigInt(pct)) / 100n;
+
+  // Ask the contract what this many shares is worth, rather than guessing from liquidity.
+  React.useEffect(() => {
+    if (!account || !pool.vault || selected === 0n) {
+      setPreview(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const v = new Contract(pool.vault, VAULT_ABI, provider);
+        const out = await v.withdraw.staticCall(selected, 0, 0, { from: account });
+        if (!cancelled) setPreview({ amount0: BigInt(out[0]), amount1: BigInt(out[1]) });
+      } catch {
+        if (!cancelled) setPreview(null);
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [pool.vault, account, selected]);
+
+  if (!account) {
+    return <p className="text-[14px] text-ink-4">Connect a wallet to see your position in this vault.</p>;
+  }
+  if (shares === 0n) {
+    return <p className="text-[14px] text-ink-4">You have no position in this vault yet.</p>;
+  }
+
+  const share = totalSupply > 0n ? Number((shares * 10000n) / totalSupply) / 100 : 0;
+  const stockOut = preview ? (stockIsToken0 ? preview.amount0 : preview.amount1) : null;
+  const usdgOut = preview ? (stockIsToken0 ? preview.amount1 : preview.amount0) : null;
 
   return (
-    <div className="flex items-center justify-between gap-3 border-t border-line pt-3">
-      <p className="text-[14px] text-ink-2">
-        Your shares: <b className="font-semibold tabular-nums text-ink">{amt(shares, 6)}</b>
-      </p>
-      <Button size="sm" variant="outline" disabled={!!pending} onClick={() => withdraw(pool, shares)}>
-        Withdraw all
-      </Button>
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-x-10 gap-y-5 sm:grid-cols-3">
+        <Figure label="Your shares" value={amt(shares, 4)} />
+        <Figure label="Share of vault" value={`${share.toFixed(4)}%`} />
+        <Figure
+          label="Withdrawable now"
+          value={
+            preview ? (
+              <span className="text-[19px]">
+                {amt(stockOut ?? 0n, 4)} <span className="text-ink-3">{symbol}</span>
+              </span>
+            ) : (
+              "—"
+            )
+          }
+          hint={preview ? `+ ${amt(usdgOut ?? 0n, 2, 6)} USDG` : "principal + earned fees"}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-baseline justify-between">
+          <span className="text-[14px] text-ink-2">Withdraw</span>
+          <span className="text-[13.5px] tabular-nums text-ink-4">{pct}% of your position</span>
+        </div>
+        <div className="flex gap-1.5">
+          {[25, 50, 75, 100].map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setPct(v)}
+              className={cn(
+                "h-8 flex-1 rounded-sm border text-[13.5px] transition-colors",
+                pct === v
+                  ? "border-line-strong bg-surface-3 text-ink"
+                  : "border-line text-ink-3 hover:border-line-strong hover:text-ink",
+              )}
+            >
+              {v === 100 ? "Max" : `${v}%`}
+            </button>
+          ))}
+        </div>
+        <Button
+          variant="outline"
+          className="w-full"
+          disabled={!!pending || selected === 0n}
+          onClick={() => withdraw(pool, selected)}
+        >
+          Withdraw {pct === 100 ? "everything" : `${pct}%`}
+        </Button>
+        <p className="text-[13px] leading-snug text-ink-4">
+          Withdrawing collects the position's outstanding fees first, so your share of them comes out with the
+          principal.
+        </p>
+      </div>
     </div>
   );
 }

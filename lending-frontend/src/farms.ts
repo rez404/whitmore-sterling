@@ -14,14 +14,21 @@ export const PLATFORM_TOKEN = "";
 export const STAKING_VAULT = "";
 
 /** LpZap — boş bırakılırsa Farms sayfasındaki "One token" sekmesi devre dışı kalır. */
-export const LP_ZAP = "";
+export const LP_ZAP = "0x5C59FEaB45B737491A43107f3bD34bb8753Bf2A0";
 
 /**
  * Deploy edilen StockLpVault adresleri, sembol bazında.
  * Örnek:  AAPL: "0x1234…", NVDA: "0x5678…"
  * Listede olmayan sembol, arayüzde "Pending" görünür ve yatırım kabul etmez.
  */
-export const VAULT_ADDRESSES: Record<string, string> = {};
+export const VAULT_ADDRESSES: Record<string, string> = {
+  SPCX: "0x4B198a43d666E61d49b508c16322d982913d11Ac",
+  SPY: "0x0a7EF648648d1b1735Dcfc888d3c6952DDa05e0C",
+  NVDA: "0x6F5113b8FFC2c78A33731c431Eb3A52B7A2bbafb",
+  USO: "0xcce7D3a9251CE143B07A3321732cAD4dF3f08d7a",
+  AAPL: "0xE333F9782970462a66199392Ef1def04004463D4",
+  TSLA: "0x51db84AC2F8b89087124b735A2E6FB9309650B02",
+};
 
 /* ============================================================================
    Doğrulanmış zincir adresleri — değiştirmeye gerek yok

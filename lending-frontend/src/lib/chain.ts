@@ -65,6 +65,9 @@ export const POOL_ABI = [
 
 export const VAULT_ABI = [
   "function deposit(uint256,uint256,uint256,uint256) returns (uint256)",
+  "function fee() view returns (uint24)",
+  "function token0() view returns (address)",
+  "function token1() view returns (address)",
   "function withdraw(uint256,uint256,uint256) returns (uint256,uint256)",
   "function balanceOf(address) view returns (uint256)",
   "function totalSupply() view returns (uint256)",

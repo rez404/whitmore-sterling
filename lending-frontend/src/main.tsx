@@ -24,6 +24,7 @@ import {
   type TxKind,
 } from "./lib/chain";
 import { explorer } from "./lib/format";
+import { useRoute } from "./lib/route";
 import {
   GAS_BUFFER_WEI,
   UNISWAP,
@@ -141,7 +142,10 @@ function App() {
     supplyEth: "",
     withdrawEth: "",
   });
-  const [tab, setTab] = React.useState<DeskTab>("dashboard");
+  // The tab lives in the URL, so a reload or a shared link lands on the same screen.
+  const [route, navigate] = useRoute();
+  const tab = route.tab;
+  const setTab = React.useCallback((next: DeskTab) => navigate({ tab: next }), [navigate]);
   const [filter, setFilter] = React.useState("");
   const [prices, setPrices] = React.useState<PriceMap>({});
   const [swapAmount, setSwapAmount] = React.useState("");
@@ -666,13 +670,11 @@ function App() {
       // Work out what the position will really consume at the current pool price and
       // floor it. Sending zero minimums lets anyone move the price in front of the
       // deposit and hand the depositor fewer shares than they paid for.
-      const expected = await fullRangeAmounts(
-        vaultPool.token0,
-        vaultPool.token1,
-        vaultPool.feeTier,
-        amount0,
-        amount1,
-      );
+      // The vault's own fee tier, not the config default: vaults sit on whichever
+      // pool was deepest at deploy time (NVDA is on 0.05%, the rest on 0.30%), and
+      // pricing against the wrong pool would produce nonsense slippage floors.
+      const vaultFee = Number(await new Contract(vaultPool.vault, VAULT_ABI, provider).fee());
+      const expected = await fullRangeAmounts(vaultPool.token0, vaultPool.token1, vaultFee, amount0, amount1);
       if (!expected) throw new Error("Could not read the pool price for this pair. Try again in a moment.");
       const { amount0Min, amount1Min } = minAmounts(expected, 100); // 1%
 
@@ -944,6 +946,8 @@ function App() {
               deposit={vaultDeposit}
               withdraw={vaultWithdraw}
               zap={vaultZap}
+              selectedSymbol={route.farm ?? ""}
+              onSelect={(symbol) => navigate({ tab: "farms", farm: symbol || undefined })}
             />
           )}
 

@@ -1,0 +1,89 @@
+{
+  "network": "robinhoodMainnet",
+  "chainId": 4663,
+  "deployedAt": "2026-08-12T15:56:20.575Z",
+  "dex": "uniswap-v3",
+  "factory": "0x1f7d7550B1b028f7571E69A784071F0205FD2EfA",
+  "positionManager": "0xC00BABBB20630974345EeA9f57d8F2FDEb81226B",
+  "owner": "0x049ee24bFd7581d34E7D0f20BE62B6a625BaF5CF",
+  "feeRecipient": "0x049ee24bFd7581d34E7D0f20BE62B6a625BaF5CF",
+  "vaults": [
+    {
+      "symbol": "SPCX",
+      "token": "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa",
+      "pool": "0xEb07d9587eFD1778dFb9c385Ec43EF6d5F9fE401",
+      "fee": 3000,
+      "liquidity": "137143333803404965",
+      "token0": "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa",
+      "token1": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+      "tickLower": -887220,
+      "tickUpper": 887220,
+      "vault": "0x4B198a43d666E61d49b508c16322d982913d11Ac"
+    },
+    {
+      "symbol": "SPY",
+      "token": "0x117cc2133c37B721F49dE2A7a74833232B3B4C0C",
+      "pool": "0xA43b424Bc609495AED4BCD88d654934b510B0aD9",
+      "fee": 3000,
+      "liquidity": "121063095739270402",
+      "token0": "0x117cc2133c37B721F49dE2A7a74833232B3B4C0C",
+      "token1": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+      "tickLower": -887220,
+      "tickUpper": 887220,
+      "vault": "0x0a7EF648648d1b1735Dcfc888d3c6952DDa05e0C"
+    },
+    {
+      "symbol": "NVDA",
+      "token": "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC",
+      "pool": "0xd4EB21209C4D6093f80B5b84f5C45cc093EA14a3",
+      "fee": 500,
+      "liquidity": "439792367581939744",
+      "token0": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+      "token1": "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC",
+      "tickLower": -887270,
+      "tickUpper": 887270,
+      "vault": "0x6F5113b8FFC2c78A33731c431Eb3A52B7A2bbafb"
+    },
+    {
+      "symbol": "USO",
+      "token": "0xa30FA36Db767ad9eD3f7a60fC79526fB4d56D344",
+      "pool": "0x02175608F1b5E6b5ed221cCFdC7Be197D111D915",
+      "fee": 3000,
+      "liquidity": "1154087440758029544",
+      "token0": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+      "token1": "0xa30FA36Db767ad9eD3f7a60fC79526fB4d56D344",
+      "tickLower": -887220,
+      "tickUpper": 887220,
+      "vault": "0xcce7D3a9251CE143B07A3321732cAD4dF3f08d7a"
+    },
+    {
+      "symbol": "AAPL",
+      "token": "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9",
+      "pool": "0x783C9bbB765047CFdD2b84b92b2Ca9F11D34b7Ed",
+      "fee": 3000,
+      "liquidity": "126384548960415374",
+      "token0": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+      "token1": "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9",
+      "tickLower": -887220,
+      "tickUpper": 887220,
+      "vault": "0xE333F9782970462a66199392Ef1def04004463D4"
+    },
+    {
+      "symbol": "TSLA",
+      "token": "0x322F0929c4625eD5bAd873c95208D54E1c003b2d",
+      "pool": "0xf4ACdAEEB7022862A763C9B1B885e11191c889E3",
+      "fee": 3000,
+      "liquidity": "110222670034321080",
+      "token0": "0x322F0929c4625eD5bAd873c95208D54E1c003b2d",
+      "token1": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+      "tickLower": -887220,
+      "tickUpper": 887220,
+      "vault": "0x51db84AC2F8b89087124b735A2E6FB9309650B02"
+    }
+  ],
+  "notes": [
+    "StockLpVault is unaudited and custodial. Do not promote it until an audit is complete.",
+    "Full-range positions only; the vault does not rebalance.",
+    "The platform keeps 10% of collected trading fees. Deposits themselves are never charged."
+  ]
+}
