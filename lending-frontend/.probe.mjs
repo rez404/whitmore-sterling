@@ -1,0 +1,13 @@
+import { chromium } from "playwright";
+const OUT = "/private/tmp/claude-501/-Users-rez-Desktop-freelance-whitmore-sterling/6ee368fd-d8f5-4197-bd0c-37a5307ec3bf/scratchpad/mob";
+const b = await chromium.launch();
+const p = await b.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+p.on("pageerror", (e) => console.log("  [pageerror]", e.message));
+await p.goto("http://127.0.0.1:5177/farms", { waitUntil: "networkidle" }).catch(()=>{});
+await p.waitForTimeout(2200);
+await p.screenshot({ path: `${OUT}/nav-closed.png` });
+await p.getByLabel("Open menu").click();
+await p.waitForTimeout(400);
+await p.screenshot({ path: `${OUT}/nav-open.png` });
+console.log("ok");
+await b.close();

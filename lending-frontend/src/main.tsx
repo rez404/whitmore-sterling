@@ -37,7 +37,7 @@ import {
 } from "./lib/uniswap";
 import { Alert } from "./components/ui/misc";
 import { Button } from "./components/ui/button";
-import { MobileNav, Sidebar, Ticker, Topbar } from "./components/shell";
+import { MobileTabBar, Sidebar, Ticker, Topbar } from "./components/shell";
 import { DashboardPage, type Position } from "./pages/dashboard";
 import { BorrowPage } from "./pages/borrow";
 import { LendingPage } from "./pages/lending";
@@ -812,10 +812,12 @@ function App() {
           setFilter={setFilter}
           onConnect={connectAction}
           pending={pending}
+          tab={tab}
+          setTab={setTab}
         />
-        <MobileNav tab={tab} setTab={setTab} />
 
-        <main className="mx-auto w-full max-w-[1180px] flex-1 px-5 py-6">
+        {/* pb-24 keeps the last row clear of the fixed phone tab bar. */}
+        <main className="mx-auto w-full max-w-[1180px] flex-1 px-4 pt-6 pb-24 sm:px-5 lg:pb-6">
           <div className="mb-4 space-y-2.5 empty:mb-0">
             {wrongNetwork && (
               <Alert tone="warn" title="Wrong network">
@@ -968,6 +970,8 @@ function App() {
           </footer>
         </main>
       </div>
+
+      <MobileTabBar tab={tab} setTab={setTab} />
     </div>
   );
 }

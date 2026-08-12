@@ -120,7 +120,7 @@ export function FigureRow({ children, className }: { children: React.ReactNode; 
   return (
     <dl
       className={cn(
-        "grid grid-cols-2 gap-x-10 gap-y-6 border-y border-line py-6 sm:grid-cols-3 lg:grid-cols-4",
+        "grid grid-cols-2 gap-x-6 gap-y-5 border-y border-line py-5 sm:grid-cols-3 sm:gap-x-10 sm:gap-y-6 sm:py-6 lg:grid-cols-4",
         className,
       )}
     >
@@ -144,11 +144,17 @@ export function Figure({
 }) {
   return (
     <div className="min-w-0">
-      <dt className="truncate text-[12.5px] font-medium tracking-[0.1em] text-ink-4 uppercase">{label}</dt>
+      <dt className="truncate text-[11.5px] font-medium tracking-[0.1em] text-ink-4 uppercase sm:text-[12.5px]">
+        {label}
+      </dt>
       <dd
         className={cn(
-          "mt-2 truncate tabular-nums",
-          size === "lg" ? "text-[34px] leading-none font-semibold" : "text-[26px] leading-none font-medium",
+          // A stat column is ~160px on a phone. Headline sizes are set for the
+          // desktop strip and have to step down, or every figure truncates.
+          "mt-1.5 truncate leading-none tabular-nums sm:mt-2",
+          size === "lg"
+            ? "text-[24px] font-semibold sm:text-[34px]"
+            : "text-[20px] font-medium sm:text-[26px]",
           tone === "good" && "text-up",
           tone === "warn" && "text-warn",
           tone === "bad" && "text-down",

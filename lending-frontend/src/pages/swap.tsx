@@ -139,7 +139,7 @@ export function SwapPage({
         description="Buy tokenized equities with ETH or USDG, directly against Uniswap V3 pools. Quotes come from the on-chain quoter; your wallet signs the router transaction."
       />
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,460px)_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,460px)_minmax(0,1fr)]">
         {/* ------------------------------- trade card ------------------------------- */}
         <Card className="self-start overflow-visible">
           <CardBody className="space-y-1.5 p-4">

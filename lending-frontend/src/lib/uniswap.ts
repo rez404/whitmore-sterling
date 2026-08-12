@@ -304,8 +304,30 @@ export async function buildZapLegs(
     return one ? [one] : null;
   }
 
-  // Foreign asset: split it across both sides.
+  // Foreign asset. The cheap plan is one hop into each side.
   const half = amountIn / 2n;
   const [a, b] = await Promise.all([leg(tokenIn, pair.token0, half), leg(tokenIn, pair.token1, amountIn - half)]);
-  return a && b ? [a, b] : null;
+  if (a && b) return [a, b];
+
+  // Most stock tokens have no pool against anything but USDG — SPCX, MSFT, USO,
+  // INTC and SNDK have no WETH pool at all — so an ETH zap has no direct leg into
+  // that side and the whole route used to fail. Go through whichever side *is*
+  // reachable: buy all of it, then sell half of that into the other token. The
+  // zap runs legs in order against its own balance and only requires each leg to
+  // end in a pair token, so a two-step route is a valid call.
+  for (const [hub, other] of [
+    [pair.token0, pair.token1],
+    [pair.token1, pair.token0],
+  ]) {
+    const first = await leg(tokenIn, hub, amountIn);
+    if (!first) continue;
+    // Size the second leg off the first leg's guaranteed minimum, never its
+    // estimate: the contract can only spend what the swap actually returned.
+    const bridge = first.amountOutMinimum / 2n;
+    if (bridge === 0n) continue;
+    const second = await leg(hub, other, bridge);
+    if (second) return [first, second];
+  }
+
+  return null;
 }

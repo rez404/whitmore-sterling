@@ -45,7 +45,10 @@ export function AmountInput({
   return (
     <div
       className={cn(
-        "flex h-11 items-center gap-2 rounded-md border border-line bg-surface-2 pr-2.5 transition-colors focus-within:border-line-strong",
+        // `min-w-0` is load-bearing: an <input> reports a ~20-character intrinsic
+        // width, and without this the field refuses to shrink and drags a phone
+        // layout wider than the screen.
+        "flex h-11 w-full min-w-0 items-center gap-2 rounded-md border border-line bg-surface-2 pr-2.5 transition-colors focus-within:border-line-strong",
         disabled && "opacity-60",
       )}
     >

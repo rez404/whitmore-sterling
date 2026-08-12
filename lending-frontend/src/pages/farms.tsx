@@ -11,7 +11,7 @@ import { PageHeader } from "@/src/components/shell";
 import { cn } from "@/src/lib/utils";
 import { ERC20_ABI, MULTI_STAKING_ABI, V3_POOL_ABI, VAULT_ABI, provider, type PriceMap } from "@/src/lib/chain";
 import { GAS_BUFFER_WEI } from "@/src/lib/uniswap";
-import { amt, short } from "@/src/lib/format";
+import { amt, priceFmt, short } from "@/src/lib/format";
 import { fetchPairStatsBatch, fetchUsdPrices, feeApr, usdValue, type PairStats } from "@/src/lib/prices";
 import { LP_VAULTS, LP_ZAP, PLATFORM_TOKEN, STAKING_VAULT, UNISWAP_V3, type VaultPool } from "@/src/farms";
 import { USDG_ADDRESS } from "@/src/markets";
@@ -146,9 +146,9 @@ export function FarmsPage({
       />
 
       <FigureRow>
-        <Figure label="Pool TVL" size="lg" value={<Money value={totalTvl} decimals={0} />} hint="Across listed pairs" />
-        <Figure label="Volume 24h" value={<Money value={totalVol} decimals={0} />} hint="Traded through these pools" />
-        <Figure label="Fees 24h" value={<Money value={totalFees} decimals={0} />} hint="Paid to liquidity providers" />
+        <Figure label="Pool TVL" size="lg" value={<Money value={totalTvl} decimals={0} compact />} hint="Across listed pairs" />
+        <Figure label="Volume 24h" value={<Money value={totalVol} decimals={0} compact />} hint="Traded through these pools" />
+        <Figure label="Fees 24h" value={<Money value={totalFees} decimals={0} compact />} hint="Paid to liquidity providers" />
         <Figure
           label="Vaults live"
           value={`${LP_VAULTS.filter((v) => v.vault).length} / ${LP_VAULTS.length}`}
@@ -159,7 +159,33 @@ export function FarmsPage({
 
       {myPositions.length > 0 && (
         <Section title="Your positions" meta={`${myPositions.length} vault${myPositions.length > 1 ? "s" : ""}`}>
+          <ul className="md:hidden">
+            {myPositions.map(({ pool, apr }) => (
+              <li key={pool.symbol} className="border-b border-line last:border-0">
+                <button
+                  type="button"
+                  onClick={() => onSelect(pool.symbol)}
+                  className="flex w-full items-center gap-3 py-3.5 text-left"
+                >
+                  <TokenPair a={pool.symbol} b="USDG" size="lg" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-semibold text-ink">{pool.symbol} / USDG</span>
+                    <span className="block truncate text-[13.5px] tabular-nums text-ink-3">
+                      {amt(myShares[pool.symbol] ?? 0n, 4)} shares
+                    </span>
+                  </span>
+                  {apr != null && (
+                    <span className="shrink-0 text-[16px] font-semibold tabular-nums text-up">
+                      {apr.toFixed(1)}%
+                    </span>
+                  )}
+                  <span className="shrink-0 text-ink-4">→</span>
+                </button>
+              </li>
+            ))}
+          </ul>
           <DataTable
+            className="hidden md:block"
             head={
               <>
                 <Th>Pair</Th>
@@ -249,8 +275,54 @@ function PairTable({
   muted?: boolean;
 }) {
   return (
-    <DataTable
-      head={
+    <>
+      {/* Seven columns do not fit a phone, and sideways-scrolling a table puts the
+          APR — the number people opened the page for — off screen. Same data,
+          stacked, with the headline figure kept in view. */}
+      <ul className="md:hidden">
+        {rows.map(({ pool, st, tier, apr }) => (
+          <li key={pool.symbol} className="border-b border-line last:border-0">
+            <button
+              type="button"
+              disabled={!st}
+              onClick={() => st && onSelect(pool.symbol)}
+              className="w-full py-3.5 text-left transition-colors disabled:opacity-50"
+            >
+              <div className="flex items-center gap-3">
+                <TokenPair a={pool.symbol} b="USDG" size="lg" />
+                <span className="min-w-0 flex-1">
+                  <span className={cn("block truncate font-semibold", muted ? "text-ink-2" : "text-ink")}>
+                    {pool.symbol} / USDG
+                  </span>
+                  <span className="block truncate text-[13.5px] text-ink-3">
+                    {pool.name.replace(" Stock Token", "").replace(" ETF Token", "")}
+                  </span>
+                </span>
+                <span className="shrink-0 text-right">
+                  <span
+                    className={cn(
+                      "block text-[18px] leading-tight font-semibold tabular-nums",
+                      apr == null ? "text-ink-4" : muted ? "text-ink-2" : "text-up",
+                    )}
+                  >
+                    {apr != null ? `${apr.toFixed(1)}%` : "—"}
+                  </span>
+                  <span className="block text-[11.5px] tracking-wide text-ink-4 uppercase">Fee APR</span>
+                </span>
+              </div>
+              <dl className="mt-2.5 grid grid-cols-3 gap-3">
+                <MiniStat label="TVL" value={<Money value={st?.liquidityUsd} decimals={0} compact />} />
+                <MiniStat label="Vol 24h" value={<Money value={st?.volume.h24} decimals={0} compact />} />
+                <MiniStat label="Fee tier" value={tier != null ? `${(tier * 100).toFixed(2)}%` : "—"} />
+              </dl>
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      <DataTable
+        className="hidden md:block"
+        head={
         <>
           <Th>Pair</Th>
           <Th align="right">Fee tier</Th>
@@ -308,7 +380,18 @@ function PairTable({
           </tr>
         ))}
       </tbody>
-    </DataTable>
+      </DataTable>
+    </>
+  );
+}
+
+/** Label-over-figure pair used inside the stacked mobile rows. */
+function MiniStat({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="truncate text-[11.5px] tracking-wide text-ink-4 uppercase">{label}</dt>
+      <dd className="mt-0.5 truncate text-[14px] tabular-nums text-ink-2">{value}</dd>
+    </div>
   );
 }
 
@@ -468,11 +551,11 @@ function FarmDetail({
       </div>
 
       <FigureRow>
-        <Figure label="Pool TVL" value={<Money value={st?.liquidityUsd} decimals={0} />} />
-        <Figure label="Volume 24h" value={<Money value={st?.volume.h24} decimals={0} />} />
+        <Figure label="Pool TVL" value={<Money value={st?.liquidityUsd} decimals={0} compact />} />
+        <Figure label="Volume 24h" value={<Money value={st?.volume.h24} decimals={0} compact />} />
         <Figure
           label="Fees 24h"
-          value={st && tier != null ? <Money value={st.volume.h24 * tier} decimals={0} /> : "—"}
+          value={st && tier != null ? <Money value={st.volume.h24 * tier} decimals={0} compact /> : "—"}
           hint="Paid to LPs"
         />
         <Figure
@@ -483,7 +566,7 @@ function FarmDetail({
         />
       </FigureRow>
 
-      <div className="grid gap-8 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
         <Section title="Pool composition">
           <div className="space-y-3">
             <div className="flex h-2 overflow-hidden rounded-full bg-surface-3">
@@ -549,7 +632,7 @@ function FarmDetail({
             highest-volume pairs; the rest can be added later.
           </Alert>
         ) : (
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,460px)_minmax(0,420px)] lg:items-start lg:gap-12">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,460px)_minmax(0,420px)] lg:items-start lg:gap-12">
             {/* ------------------------------- the ticket ------------------------------ */}
             <div className="space-y-2">
               <div className="mb-4 flex gap-1 rounded-md border border-line bg-surface-2 p-1">
@@ -1150,7 +1233,29 @@ export function StakePage({
         {rewards.length === 0 ? (
           <p className="py-2 text-[15px] text-ink-4">No partner tokens registered yet.</p>
         ) : (
+          <>
+          <ul className="md:hidden">
+            {rewards.map((r) => (
+              <li key={r.token} className="flex items-center gap-3 border-b border-line py-3.5 last:border-0">
+                <TokenIcon symbol={r.symbol} size="lg" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold text-ink">{r.symbol}</p>
+                  <p className="truncate text-[13px] text-ink-4">
+                    {r.active ? `${amt(r.perDay, 0, r.decimals)} / day` : "Stream ended"}
+                    {r.priceUsd != null && <> · {priceFmt(r.priceUsd)}</>}
+                  </p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-[15px] font-medium tabular-nums text-ink">
+                    {connected ? amt(r.earned, 2, r.decimals) : "—"}
+                  </p>
+                  <p className="text-[11.5px] tracking-wide text-ink-4 uppercase">Claimable</p>
+                </div>
+              </li>
+            ))}
+          </ul>
           <DataTable
+            className="hidden md:block"
             head={
               <>
                 <Th>Partner</Th>
@@ -1212,10 +1317,11 @@ export function StakePage({
               ))}
             </tbody>
           </DataTable>
+          </>
         )}
       </Section>
 
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">
         <Section title="Manage stake">
           <div className="space-y-4">
             <div className="flex gap-1 rounded-md border border-line bg-surface p-1">

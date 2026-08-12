@@ -13,6 +13,24 @@ export const usd = (v?: bigint, digits = 2, decimals = 18) =>
 export const amt = (v?: bigint, digits = 4, decimals = 18) =>
   v == null ? "—" : Number(formatUnits(v, decimals)).toLocaleString(undefined, { maximumFractionDigits: digits });
 
+/**
+ * Abbreviated figure — 4,416,203 becomes "4.42M".
+ *
+ * A phone gives a stat column about 160px. A seven-figure number does not fit at
+ * headline size, and truncating it ("$4,416,2…") is worse than rounding it: the
+ * magnitude is the thing being read at that size, and the exact figure is one
+ * breakpoint away.
+ */
+export const compactNum = (v: number, currency = true) =>
+  new Intl.NumberFormat(undefined, {
+    notation: "compact",
+    maximumFractionDigits: 2,
+    ...(currency ? { style: "currency" as const, currency: "USD" } : {}),
+  }).format(v);
+
+/** A chain amount as a plain number, for components that do their own formatting. */
+export const num = (v?: bigint | null, decimals = 18) => (v == null ? null : Number(formatUnits(v, decimals)));
+
 export const short = (a = "") => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "");
 
 export const pct = (bps?: bigint | number) => (bps == null ? "—" : `${(Number(bps) / 100).toFixed(2)}%`);

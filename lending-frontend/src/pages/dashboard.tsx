@@ -7,7 +7,7 @@ import { DataTable, Figure, FigureRow, Num, Section, Td, Th } from "@/src/compon
 import { TokenIcon } from "@/src/components/ui/token";
 import { PageHeader } from "@/src/components/shell";
 import type { AccountState, DeskTab, PoolState, PriceMap } from "@/src/lib/chain";
-import { amt, hfTone, pct, priceFmt, short, usd } from "@/src/lib/format";
+import { amt, hfTone, num, pct, priceFmt, short, usd } from "@/src/lib/format";
 import type { MarketConfig } from "@/src/markets";
 
 export type Position = { symbol: string; token: string; amount: bigint; price?: number };
@@ -70,7 +70,7 @@ export function DashboardPage({
           }
         />
       ) : loading && !accountState ? (
-        <div className="grid gap-6 md:grid-cols-4">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
           {[0, 1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-16" />
           ))}
@@ -81,11 +81,11 @@ export function DashboardPage({
             <Figure
               label="Net position"
               size="lg"
-              value={<Money value={netValue} />}
+              value={<Money value={netValue} compact />}
               hint="Collateral + supplied − debt"
             />
-            <Figure label="Collateral value" value={<Money value={collateralValue} />} hint="All listed markets" />
-            <Figure label="Outstanding debt" value={<Money value={debtValue} />} hint="USDG borrowed" />
+            <Figure label="Collateral value" value={<Money value={collateralValue} compact />} hint="All listed markets" />
+            <Figure label="Outstanding debt" value={<Money value={debtValue} compact />} hint="USDG borrowed" />
             <Figure
               label="Health factor"
               value={health}
@@ -116,7 +116,7 @@ export function DashboardPage({
             </div>
           )}
 
-          <div className="grid gap-8 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
             <Section
               title="Collateral"
               meta={positions.length ? `${positions.length} market${positions.length > 1 ? "s" : ""}` : undefined}
@@ -216,9 +216,9 @@ export function DashboardPage({
         }
       >
         <FigureRow className="border-t-0 pt-1">
-          <Figure label="Available liquidity" value={usd(pool?.liquidity, 2, debtDecimals)} />
-          <Figure label="Total supplied" value={usd(pool?.totalSuppliedLiquidity, 2, debtDecimals)} />
-          <Figure label="Total debt" value={usd(pool?.totalDebt, 2, debtDecimals)} />
+          <Figure label="Available liquidity" value={<Money value={num(pool?.liquidity, debtDecimals)} compact />} />
+          <Figure label="Total supplied" value={<Money value={num(pool?.totalSuppliedLiquidity, debtDecimals)} compact />} />
+          <Figure label="Total debt" value={<Money value={num(pool?.totalDebt, debtDecimals)} compact />} />
           <Figure label="Borrow APR" value={pool ? pct(pool.borrowAprBps) : "—"} />
         </FigureRow>
       </Section>

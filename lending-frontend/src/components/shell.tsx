@@ -8,9 +8,11 @@ import {
   GraduationCap,
   LayoutDashboard,
   Landmark,
+  Menu,
   Search,
   Sprout,
   Wallet,
+  X,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { Button } from "@/src/components/ui/button";
@@ -63,9 +65,7 @@ export function Sidebar({ tab, setTab }: { tab: DeskTab; setTab: (t: DeskTab) =>
           <span className="block truncate text-[15px] leading-tight font-semibold tracking-tight text-ink">
             Whitmore Sterling
           </span>
-          <span className="block text-[11px] leading-tight font-medium tracking-[0.22em] text-ink-4 uppercase">
-            Texas
-          </span>
+    
         </span>
       </a>
 
@@ -106,29 +106,162 @@ export function Sidebar({ tab, setTab }: { tab: DeskTab; setTab: (t: DeskTab) =>
   );
 }
 
-/** Mobile/tablet nav — the sidebar collapses into a scrollable strip. */
-export function MobileNav({ tab, setTab }: { tab: DeskTab; setTab: (t: DeskTab) => void }) {
+/**
+ * Phone navigation, in two halves.
+ *
+ * The six things people came to do sit in a bar fixed to the bottom of the
+ * screen, where a thumb reaches without stretching. Everything else — reading
+ * material and contract links — lives behind the hamburger at the top, because
+ * it is looked up occasionally and does not deserve permanent screen space.
+ */
+export function MobileTabBar({ tab, setTab }: { tab: DeskTab; setTab: (t: DeskTab) => void }) {
   return (
-    <div className="flex gap-1 overflow-x-auto border-b border-line bg-surface px-3 py-2 lg:hidden">
-      {[...NAV, ...SECONDARY].map((entry) => {
-        const Icon = entry.icon;
-        const active = tab === entry.id;
-        return (
+    <nav
+      aria-label="Primary"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-bg/92 backdrop-blur-lg lg:hidden"
+      // Keeps the bar clear of the iOS home indicator.
+      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+    >
+      <div className="mx-auto flex max-w-[560px]">
+        {NAV.map((entry) => {
+          const Icon = entry.icon;
+          const active = tab === entry.id;
+          return (
+            <button
+              key={entry.id}
+              data-nav={entry.id}
+              onClick={() => setTab(entry.id)}
+              aria-current={active ? "page" : undefined}
+              className={cn(
+                "flex min-w-0 flex-1 flex-col items-center gap-1 py-2.5 transition-colors",
+                active ? "text-ink" : "text-ink-4",
+              )}
+            >
+              <Icon className={cn("size-[21px] shrink-0", active && "text-accent")} />
+              <span className="w-full truncate px-0.5 text-center text-[10.5px] leading-none font-medium">
+                {entry.label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
+
+/** The hamburger and the sheet it opens. Resources, contracts, chain. */
+export function MobileMenu({ tab, setTab }: { tab: DeskTab; setTab: (t: DeskTab) => void }) {
+  const [open, setOpen] = React.useState(false);
+
+  // A menu that survives a back gesture or an orientation change is worse than
+  // no menu, and the page behind it should not scroll while it is up.
+  React.useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const go = (t: DeskTab) => {
+    setTab(t);
+    setOpen(false);
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label="Open menu"
+        aria-expanded={open}
+        className="flex size-9 shrink-0 items-center justify-center rounded-md border border-line text-ink-2 transition-colors hover:text-ink lg:hidden"
+      >
+        <Menu className="size-[18px]" />
+      </button>
+
+      {open && (
+        <div className="fixed inset-0 z-50 lg:hidden">
           <button
-            key={entry.id}
-            data-nav={entry.id}
-            onClick={() => setTab(entry.id)}
-            className={cn(
-              "flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[14px] font-medium",
-              active ? "bg-surface-3 text-ink" : "text-ink-3",
-            )}
-          >
-            <Icon className={cn("size-3.5", active && "text-accent")} />
-            {entry.label}
-          </button>
-        );
-      })}
-    </div>
+            type="button"
+            aria-label="Close menu"
+            onClick={() => setOpen(false)}
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+          />
+          <div className="absolute inset-x-0 top-0 max-h-[85vh] overflow-y-auto rounded-b-lg border-b border-line bg-surface p-4 shadow-2xl shadow-black/60">
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-3">
+                <img src="/whitmore-mark.svg" alt="" className="size-9 shrink-0" />
+                <span className="min-w-0">
+                  <span className="block truncate text-[15px] leading-tight font-semibold tracking-tight text-ink">
+                    Whitmore Sterling
+                  </span>
+                  <span className="block text-[11px] leading-tight font-medium tracking-[0.22em] text-ink-4 uppercase">
+                    Texas
+                  </span>
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                aria-label="Close menu"
+                className="flex size-9 shrink-0 items-center justify-center rounded-md border border-line text-ink-2"
+              >
+                <X className="size-[18px]" />
+              </button>
+            </div>
+
+            <nav className="mt-5 flex flex-col gap-0.5">
+              <p className="px-3 pb-1.5 text-[12px] font-semibold tracking-[0.13em] text-ink-4 uppercase">Resources</p>
+              {SECONDARY.map((entry) => {
+                const Icon = entry.icon;
+                const active = tab === entry.id;
+                return (
+                  <button
+                    key={entry.id}
+                    data-nav={entry.id}
+                    onClick={() => go(entry.id)}
+                    aria-current={active ? "page" : undefined}
+                    className={cn(
+                      "flex h-11 w-full items-center gap-3 rounded-md px-3 text-[16px] font-medium transition-colors",
+                      active ? "bg-surface-3 text-ink" : "text-ink-2",
+                    )}
+                  >
+                    <Icon className={cn("size-[19px] shrink-0", active ? "text-accent" : "text-ink-3")} />
+                    {entry.label}
+                  </button>
+                );
+              })}
+            </nav>
+
+            <div className="mt-5 flex flex-col gap-0.5 border-t border-line pt-4">
+              <a
+                href={explorer(LENDING_POOL_ADDRESS, "address")}
+                target="_blank"
+                rel="noreferrer"
+                className="flex h-10 items-center justify-between rounded-md px-3 text-[15px] text-ink-3"
+              >
+                Pool contract <ExternalLink className="size-3.5" />
+              </a>
+              <a
+                href={explorer(TREASURY_ADDRESS, "address")}
+                target="_blank"
+                rel="noreferrer"
+                className="flex h-10 items-center justify-between rounded-md px-3 text-[15px] text-ink-3"
+              >
+                Treasury <ExternalLink className="size-3.5" />
+              </a>
+              <p className="mt-2 px-3 text-[12.5px] leading-snug text-ink-4">
+                {MARKETS.length} markets · {CHAIN.name}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -161,15 +294,20 @@ export function Topbar({
   setFilter,
   onConnect,
   pending,
+  tab,
+  setTab,
 }: {
   account: string;
   filter: string;
   setFilter: (v: string) => void;
   onConnect: () => void;
   pending: string;
+  tab: DeskTab;
+  setTab: (t: DeskTab) => void;
 }) {
   return (
-    <header className="flex items-center gap-3 border-b border-line bg-bg/80 px-5 py-3 backdrop-blur">
+    <header className="flex items-center gap-3 border-b border-line bg-bg/80 px-4 py-3 backdrop-blur sm:px-5">
+      <MobileMenu tab={tab} setTab={setTab} />
       <label className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border border-line bg-surface px-3 md:max-w-sm">
         <Search className="size-4 shrink-0 text-ink-4" />
         <input
@@ -183,7 +321,15 @@ export function Topbar({
       <div className="ml-auto flex items-center gap-2">
         <Button variant={account ? "outline" : "primary"} size="sm" onClick={onConnect} disabled={!!pending}>
           <Wallet />
-          {account ? short(account) : "Connect wallet"}
+          {account ? (
+            short(account)
+          ) : (
+            <>
+              {/* The hamburger costs width on a phone; the verb alone is enough. */}
+              <span className="sm:hidden">Connect</span>
+              <span className="hidden sm:inline">Connect wallet</span>
+            </>
+          )}
         </Button>
       </div>
     </header>

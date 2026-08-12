@@ -8,7 +8,7 @@ import { TokenIcon } from "@/src/components/ui/token";
 import { PageHeader } from "@/src/components/shell";
 import { cn } from "@/src/lib/utils";
 import type { AccountState, MarketState, OracleState, PoolState, PriceMap, TxKind } from "@/src/lib/chain";
-import { amt, hfTone, pct, priceFmt, usd } from "@/src/lib/format";
+import { amt, hfTone, num, pct, priceFmt } from "@/src/lib/format";
 import type { MarketConfig } from "@/src/markets";
 
 export function BorrowPage({
@@ -84,6 +84,90 @@ export function BorrowPage({
   const borrowBlocked = projectedBorrowHF !== null && projectedBorrowHF !== "∞" && Number(projectedBorrowHF) < 1;
   const borrowRisky = projectedBorrowHF !== null && projectedBorrowHF !== "∞" && Number(projectedBorrowHF) < 1.1;
 
+  // The same four actions serve the desktop table's expanded row and the phone
+  // card, so they are written once and mounted in whichever layout is visible.
+  const marketPanel = (m: MarketConfig) => (
+    <>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <ActionField
+          label={`Deposit ${m.symbol}`}
+          hint="Adds collateral and raises your borrow limit."
+          value={form.deposit}
+          onChange={(v) => setAmount("deposit", v)}
+          unit={m.symbol}
+          onMax={accountState ? () => setAmount("deposit", fmt18(accountState.stock)) : undefined}
+          button="Deposit"
+          variant="primary"
+          onSubmit={() => action("deposit")}
+          disabled={!!pending || !account}
+        />
+        <ActionField
+          label="Borrow USDG"
+          hint={
+            projectedBorrowHF && Number(form.borrow) > 0
+              ? `Health factor after borrow: ${projectedBorrowHF}`
+              : "Draw USDG against posted collateral."
+          }
+          hintTone={borrowBlocked ? "bad" : borrowRisky ? "warn" : undefined}
+          value={form.borrow}
+          onChange={(v) => setAmount("borrow", v)}
+          unit="USDG"
+          onMax={accountState && pool ? () => setAmount("borrow", fmtUsdg(maxBorrow())) : undefined}
+          button="Borrow"
+          variant="primary"
+          onSubmit={() => action("borrow")}
+          disabled={!!pending || !account || !pool || pool.liquidity === 0n}
+        />
+        <ActionField
+          label="Repay USDG"
+          hint="Lowers debt and improves health."
+          value={form.repay}
+          onChange={(v) => setAmount("repay", v)}
+          unit="USDG"
+          onMax={accountState ? () => setAmount("repay", fmtUsdg(maxRepay())) : undefined}
+          button="Repay"
+          onSubmit={() => action("repay")}
+          disabled={!!pending || !account}
+        />
+        <ActionField
+          label={`Withdraw ${m.symbol}`}
+          hint="Blocked if it would make the account unsafe."
+          value={form.withdraw}
+          onChange={(v) => setAmount("withdraw", v)}
+          unit={m.symbol}
+          onMax={
+            accountState && accountState.debt === 0n
+              ? () => setAmount("withdraw", fmt18(accountState.collateral))
+              : undefined
+          }
+          button="Withdraw"
+          onSubmit={() => action("withdraw")}
+          disabled={!!pending || !account}
+        />
+      </div>
+
+      {account && accountState && (
+        <div className="mt-4 flex flex-wrap gap-x-8 gap-y-1.5 text-[14px] text-ink-3">
+          <span>
+            Posted{" "}
+            <Num>
+              {amt(accountState.collateral)} {m.symbol}
+            </Num>
+          </span>
+          <span>
+            Wallet{" "}
+            <Num>
+              {amt(accountState.stock)} {m.symbol}
+            </Num>
+          </span>
+          <span>
+            Max staleness <Num>{Math.round(m.maxStaleness / 3600)}h</Num>
+          </span>
+        </div>
+      )}
+    </>
+  );
+
   return (
     <div className="space-y-7">
       <PageHeader
@@ -94,14 +178,18 @@ export function BorrowPage({
       <FigureRow>
         <Figure
           label="Borrow limit"
-          value={account ? usd(accountState?.borrowLimit) : "—"}
+          value={account ? <Money value={num(accountState?.borrowLimit)} compact /> : "—"}
           hint="Across all collateral"
         />
-        <Figure label="Your debt" value={account ? usd(accountState?.debt, 2, debtDecimals) : "—"} hint="USDG" />
+        <Figure
+          label="Your debt"
+          value={account ? <Money value={num(accountState?.debt, debtDecimals)} compact /> : "—"}
+          hint="USDG"
+        />
         <Figure label="Health factor" value={account ? health : "—"} tone={account ? hfTone(health) : undefined} />
         <Figure
           label="Pool liquidity"
-          value={usd(pool?.liquidity, 2, debtDecimals)}
+          value={<Money value={num(pool?.liquidity, debtDecimals)} compact />}
           hint={pool?.liquidity === 0n ? "Nothing available to borrow" : "Borrowable now"}
           tone={pool?.liquidity === 0n ? "warn" : undefined}
         />
@@ -130,7 +218,57 @@ export function BorrowPage({
         ) : markets.length === 0 ? (
           <EmptyState title="No markets match" text="Clear the search filter to see all listed markets." />
         ) : (
+          <>
+          {/* Six columns cannot be read on a phone, and the ones that matter sit at
+              the far right. The same rows, stacked, with the actions unchanged. */}
+          <ul className="md:hidden">
+            {markets.map((m) => {
+              const p = prices[m.symbol];
+              const isSelected = m.symbol === selectedMarket.symbol;
+              const isOpen = expandedSymbol === m.symbol;
+              const stale = p?.stale || (isSelected && oracle?.stale);
+              return (
+                <li key={m.symbol} className={cn("border-b border-line", isOpen && "bg-[var(--color-hover)]")}>
+                  <button
+                    type="button"
+                    onClick={() => onToggleMarket(m)}
+                    aria-expanded={isOpen}
+                    className="w-full py-3.5 text-left"
+                  >
+                    <div className="flex items-center gap-3">
+                      <TokenIcon symbol={m.symbol} size="lg" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-semibold text-ink">{m.symbol}</span>
+                        <span className="block truncate text-[13.5px] text-ink-3">
+                          {m.name.replace(" Stock Token", "").replace(" ETF Token", "")}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-right">
+                        <span className="block text-[16px] font-medium tabular-nums text-ink">
+                          <Money value={p?.price} decimals={p && p.price < 1 ? 4 : 2} />
+                        </span>
+                        <span className="block">
+                          <Status tone={stale ? "warn" : "good"}>{stale ? "Stale" : "Live"}</Status>
+                        </span>
+                      </span>
+                      <ChevronDown
+                        className={cn("size-4 shrink-0 text-ink-4 transition-transform", isOpen && "rotate-180")}
+                      />
+                    </div>
+                    <dl className="mt-2.5 grid grid-cols-3 gap-3">
+                      <MiniStat label="Max LTV" value={pct(m.collateralFactorBps)} />
+                      <MiniStat label="Liquidation" value={pct(m.liquidationThresholdBps)} />
+                      <MiniStat label="Liq. bonus" value={pct(m.liquidationBonusBps)} />
+                    </dl>
+                  </button>
+                  {isOpen && <div className="pb-5">{marketPanel(m)}</div>}
+                </li>
+              );
+            })}
+          </ul>
+
           <DataTable
+            className="hidden md:block"
             head={
               <>
                 <Th>Asset</Th>
@@ -189,83 +327,7 @@ export function BorrowPage({
                   {isOpen && (
                     <tr>
                       <Td colSpan={6} className="pt-0 pb-5">
-                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                          <ActionField
-                            label={`Deposit ${m.symbol}`}
-                            hint="Adds collateral and raises your borrow limit."
-                            value={form.deposit}
-                            onChange={(v) => setAmount("deposit", v)}
-                            unit={m.symbol}
-                            onMax={accountState ? () => setAmount("deposit", fmt18(accountState.stock)) : undefined}
-                            button="Deposit"
-                            variant="primary"
-                            onSubmit={() => action("deposit")}
-                            disabled={!!pending || !account}
-                          />
-                          <ActionField
-                            label="Borrow USDG"
-                            hint={
-                              projectedBorrowHF && Number(form.borrow) > 0
-                                ? `Health factor after borrow: ${projectedBorrowHF}`
-                                : "Draw USDG against posted collateral."
-                            }
-                            hintTone={borrowBlocked ? "bad" : borrowRisky ? "warn" : undefined}
-                            value={form.borrow}
-                            onChange={(v) => setAmount("borrow", v)}
-                            unit="USDG"
-                            onMax={accountState && pool ? () => setAmount("borrow", fmtUsdg(maxBorrow())) : undefined}
-                            button="Borrow"
-                            variant="primary"
-                            onSubmit={() => action("borrow")}
-                            disabled={!!pending || !account || !pool || pool.liquidity === 0n}
-                          />
-                          <ActionField
-                            label="Repay USDG"
-                            hint="Lowers debt and improves health."
-                            value={form.repay}
-                            onChange={(v) => setAmount("repay", v)}
-                            unit="USDG"
-                            onMax={accountState ? () => setAmount("repay", fmtUsdg(maxRepay())) : undefined}
-                            button="Repay"
-                            onSubmit={() => action("repay")}
-                            disabled={!!pending || !account}
-                          />
-                          <ActionField
-                            label={`Withdraw ${m.symbol}`}
-                            hint="Blocked if it would make the account unsafe."
-                            value={form.withdraw}
-                            onChange={(v) => setAmount("withdraw", v)}
-                            unit={m.symbol}
-                            onMax={
-                              accountState && accountState.debt === 0n
-                                ? () => setAmount("withdraw", fmt18(accountState.collateral))
-                                : undefined
-                            }
-                            button="Withdraw"
-                            onSubmit={() => action("withdraw")}
-                            disabled={!!pending || !account}
-                          />
-                        </div>
-
-                        {account && accountState && (
-                          <div className="mt-4 flex flex-wrap gap-x-8 gap-y-1.5 text-[14px] text-ink-3">
-                            <span>
-                              Posted{" "}
-                              <Num>
-                                {amt(accountState.collateral)} {m.symbol}
-                              </Num>
-                            </span>
-                            <span>
-                              Wallet{" "}
-                              <Num>
-                                {amt(accountState.stock)} {m.symbol}
-                              </Num>
-                            </span>
-                            <span>
-                              Max staleness <Num>{Math.round(m.maxStaleness / 3600)}h</Num>
-                            </span>
-                          </div>
-                        )}
+                        {marketPanel(m)}
                       </Td>
                     </tr>
                   )}
@@ -273,8 +335,19 @@ export function BorrowPage({
               );
             })}
           </DataTable>
+          </>
         )}
       </Section>
+    </div>
+  );
+}
+
+/** Label-over-figure pair used inside the stacked mobile rows. */
+function MiniStat({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="truncate text-[11.5px] tracking-wide text-ink-4 uppercase">{label}</dt>
+      <dd className="mt-0.5 truncate text-[14px] tabular-nums text-ink-2">{value}</dd>
     </div>
   );
 }

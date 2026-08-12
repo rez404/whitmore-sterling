@@ -65,7 +65,7 @@ export function DocumentationPage({ pool }: { pool: PoolState | null }) {
       />
 
       <Section title="Lending protocol">
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Article id="docs-overview" eyebrow="01 · System model" title="What the protocol is" className="lg:col-span-2">
           <p>
             At its core the protocol has one lending pool contract, one USDG debt asset, and many listed stock-token
@@ -267,7 +267,7 @@ export function DocumentationPage({ pool }: { pool: PoolState | null }) {
       </Section>
 
       <Section title="Trading, farms and staking">
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Article id="docs-swap" eyebrow="13 · Swap" title="Routing trades through Uniswap V3" className="lg:col-span-2">
           <p>
             The Swap page trades directly against Uniswap V3 pools on this chain. There is no aggregator, no relayer and
@@ -381,7 +381,7 @@ export function DocumentationPage({ pool }: { pool: PoolState | null }) {
       </Section>
 
       <Section id="docs-addresses" title="Deployed contracts" meta="Robinhood Chain · 4663">
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <AddressTable
             title="Core"
             rows={[
@@ -497,7 +497,7 @@ export function LearnPage({ go }: { go: (tab: DeskTab) => void }) {
       />
 
       <Section title="Part one · Borrowing against what you hold">
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Article id="learn-tokenized" eyebrow="01 · Foundation" title="What tokenized stocks are" className="lg:col-span-2">
           <p>
             Tokenized stocks are blockchain tokens designed to represent economic exposure to public companies, ETFs, or
@@ -590,7 +590,7 @@ export function LearnPage({ go }: { go: (tab: DeskTab) => void }) {
       </Section>
 
       <Section title="Part two · Earning on what you hold">
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Article
           id="learn-farming"
           eyebrow="01 · Farming"
@@ -736,7 +736,7 @@ export function LearnPage({ go }: { go: (tab: DeskTab) => void }) {
       </div>
       </Section>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Article id="learn-risks" eyebrow="Before you sign" title="What to understand" className="lg:col-span-2">
           <p>
             Tokenized assets make markets programmable but do not remove risk. Lending adds smart contract risk, oracle
@@ -800,7 +800,7 @@ export function SuitsPage() {
         }
       />
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
         <Card className="overflow-hidden">
           <img
             src="/suits-manifesto.png"

@@ -1,4 +1,5 @@
 import * as React from "react";
+import { compactNum } from "@/src/lib/format";
 import { cn } from "@/src/lib/utils";
 
 /**
@@ -12,14 +13,30 @@ export function Money({
   value,
   decimals = 2,
   currency = true,
+  compact,
   className,
 }: {
   value?: number | null;
   decimals?: number;
   currency?: boolean;
+  /** Abbreviate below `sm` — for aggregate figures that will not fit on a phone. */
+  compact?: boolean;
   className?: string;
 }) {
   if (value == null || Number.isNaN(value)) return <span className={cn("text-ink-4", className)}>—</span>;
+
+  // Only worth abbreviating once the full figure is actually too wide; under
+  // five digits both forms are the same length and rounding just loses cents.
+  if (compact && Math.abs(value) >= 10_000) {
+    return (
+      <span className={cn("tabular-nums whitespace-nowrap", className)}>
+        <span className="sm:hidden">{compactNum(value, currency)}</span>
+        <span className="hidden sm:inline">
+          <Money value={value} decimals={decimals} currency={currency} />
+        </span>
+      </span>
+    );
+  }
 
   const fmt = new Intl.NumberFormat(undefined, {
     ...(currency ? { style: "currency" as const, currency: "USD" } : {}),
