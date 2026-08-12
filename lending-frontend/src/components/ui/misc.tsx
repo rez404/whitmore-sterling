@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
+import { TokenUnit } from "@/src/components/ui/token";
 import { cn } from "@/src/lib/utils";
 
 /* ---------------------------------- Input --------------------------------- */
@@ -19,7 +20,13 @@ export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttribute
 );
 Input.displayName = "Input";
 
-/** Amount field with a trailing unit label and optional Max affordance. */
+/**
+ * Compact amount field for dense forms.
+ *
+ * The unit is drawn as the asset's mark plus its ticker rather than as a word:
+ * on a page where four fields sit side by side, the logo is what tells them
+ * apart at a glance, and it is the same mark the row above uses.
+ */
 export function AmountInput({
   value,
   onChange,
@@ -36,7 +43,12 @@ export function AmountInput({
   disabled?: boolean;
 }) {
   return (
-    <div className="flex h-10 items-center gap-2 rounded-md border border-line bg-surface-2 pr-2 focus-within:border-line-strong">
+    <div
+      className={cn(
+        "flex h-11 items-center gap-2 rounded-md border border-line bg-surface-2 pr-2.5 transition-colors focus-within:border-line-strong",
+        disabled && "opacity-60",
+      )}
+    >
       <input
         id={id}
         value={value}
@@ -45,18 +57,18 @@ export function AmountInput({
         inputMode="decimal"
         autoComplete="off"
         placeholder="0.00"
-        className="h-full min-w-0 flex-1 bg-transparent px-3 text-sm tabular-nums text-ink placeholder:text-ink-4 focus:outline-none"
+        className="h-full min-w-0 flex-1 bg-transparent px-3 text-[15px] tabular-nums text-ink placeholder:text-ink-4 focus:outline-none"
       />
-      {unit && <span className="text-[13px] font-medium text-ink-3">{unit}</span>}
       {onMax && (
         <button
           type="button"
           onClick={onMax}
-          className="rounded-sm px-1.5 py-0.5 text-[12px] font-semibold tracking-wide text-accent uppercase hover:bg-accent-soft"
+          className="rounded-sm px-1.5 py-0.5 text-[12px] font-semibold tracking-wide text-accent uppercase transition-colors hover:bg-accent-soft"
         >
           Max
         </button>
       )}
+      {unit && <TokenUnit symbol={unit} className="border-l border-line py-1 pl-2.5" />}
     </div>
   );
 }
@@ -213,7 +225,7 @@ export function Article({
         <p className="mb-2 text-[12px] font-semibold tracking-[0.14em] text-ink-4 uppercase">{eyebrow}</p>
       )}
       <h3 className="text-lg font-semibold text-ink">{title}</h3>
-      <div className="mt-3 space-y-3 text-[14.5px] leading-relaxed text-ink-2 [&_li]:leading-relaxed [&_ol]:list-decimal [&_ol]:space-y-1.5 [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-5">
+      <div className="mt-3 space-y-3 text-[14.5px] leading-relaxed text-ink-2 [&_code]:rounded-sm [&_code]:bg-surface-2 [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[13px] [&_code]:text-ink [&_li]:leading-relaxed [&_ol]:list-decimal [&_ol]:space-y-1.5 [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-5">
         {children}
       </div>
     </article>

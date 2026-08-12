@@ -13,15 +13,17 @@ export function Section({
   action,
   children,
   className,
+  id,
 }: {
   title?: React.ReactNode;
   meta?: React.ReactNode;
   action?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
+  id?: string;
 }) {
   return (
-    <section className={cn("space-y-4", className)}>
+    <section id={id} className={cn("scroll-mt-24 space-y-4", className)}>
       {(title || action) && (
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1.5 border-b border-line pb-3">
           <h2 className="text-[13px] font-semibold tracking-[0.13em] text-ink-2 uppercase">{title}</h2>

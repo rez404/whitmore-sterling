@@ -7,12 +7,17 @@ const SIZES = { xs: "size-4", sm: "size-5", md: "size-7", lg: "size-9", xl: "siz
 
 /**
  * Asset mark. Logos live in `public/tokens/<SYMBOL>.svg`; anything without one
- * (USDG, ETH, an unlisted token) falls back to a lettered chip so rows never
- * collapse to a broken-image icon.
+ * falls back to a lettered chip so rows never collapse to a broken-image icon.
  */
 // Stock marks ship as SVG, partner tokens as raster from their listing. Try each
 // in turn rather than forcing one format on assets we do not control.
 const EXTENSIONS = ["svg", "png"] as const;
+
+// The platform token has no listing to pull a logo from — it wears the house mark.
+const OVERRIDES: Record<string, string> = {
+  STERLING: "/whitmore-mark.svg",
+  WHIT: "/whitmore-mark.svg",
+};
 
 export function TokenIcon({
   symbol,
@@ -26,7 +31,8 @@ export function TokenIcon({
   const [attempt, setAttempt] = React.useState(0);
   const sym = (symbol || "?").toUpperCase();
   React.useEffect(() => setAttempt(0), [sym]);
-  const failed = attempt >= EXTENSIONS.length;
+  const override = OVERRIDES[sym];
+  const failed = attempt >= (override ? 1 : EXTENSIONS.length);
 
   if (failed) {
     return (
@@ -44,7 +50,7 @@ export function TokenIcon({
   }
   return (
     <img
-      src={`/tokens/${sym}.${EXTENSIONS[attempt]}`}
+      src={override ?? `/tokens/${sym}.${EXTENSIONS[attempt]}`}
       alt=""
       aria-hidden="true"
       loading="lazy"
@@ -60,6 +66,51 @@ export function TokenPair({ a, b, size = "md" }: { a: string; b: string; size?: 
     <span className="flex shrink-0 items-center -space-x-2">
       <TokenIcon symbol={a} size={size} className="ring-2 ring-surface" />
       <TokenIcon symbol={b} size={size} className="ring-2 ring-surface" />
+    </span>
+  );
+}
+
+/**
+ * A denomination, written the way an exchange writes it: mark first, ticker
+ * second. Used wherever an amount needs a unit — so "USDG" is never just a word
+ * next to a number.
+ */
+export function TokenPill({
+  symbol,
+  size = "md",
+  className,
+}: {
+  symbol: string;
+  size?: keyof typeof SIZES;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "flex h-10 shrink-0 items-center gap-2 rounded-full border border-line bg-surface-3 pr-3.5 pl-1.5 text-[15px] font-semibold text-ink",
+        className,
+      )}
+    >
+      <TokenIcon symbol={symbol} size={size} />
+      {symbol.toUpperCase()}
+    </span>
+  );
+}
+
+/** Compact unit tag for inline fields — icon plus ticker, no chrome. */
+export function TokenUnit({
+  symbol,
+  size = "sm",
+  className,
+}: {
+  symbol: string;
+  size?: keyof typeof SIZES;
+  className?: string;
+}) {
+  return (
+    <span className={cn("flex shrink-0 items-center gap-1.5 text-[14px] font-medium text-ink-2", className)}>
+      <TokenIcon symbol={symbol} size={size} />
+      {symbol.toUpperCase()}
     </span>
   );
 }

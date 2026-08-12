@@ -194,7 +194,7 @@ function Field({
       <label className="block text-[14px] font-medium text-ink-2">{label}</label>
       <div className="flex gap-2">
         <AmountInput value={value} onChange={onChange} unit={unit} disabled={disabled} />
-        <Button type="submit" variant={variant} disabled={disabled} className="shrink-0">
+        <Button type="submit" size="lg" variant={variant} disabled={disabled} className="shrink-0">
           {button}
         </Button>
       </div>

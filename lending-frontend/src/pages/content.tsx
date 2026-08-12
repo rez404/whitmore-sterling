@@ -3,10 +3,12 @@ import { ExternalLink } from "lucide-react";
 import { Button } from "@/src/components/ui/button";
 import { Card, CardBody } from "@/src/components/ui/card";
 import { Article, Callout, Stat, StatGrid } from "@/src/components/ui/misc";
+import { Section } from "@/src/components/ui/table";
 import { PageHeader } from "@/src/components/shell";
 import type { DeskTab, PoolState } from "@/src/lib/chain";
-import { pct, short } from "@/src/lib/format";
-import { LENDING_POOL_ADDRESS, MARKETS, TREASURY_ADDRESS } from "@/src/markets";
+import { explorer, short } from "@/src/lib/format";
+import { LP_VAULTS, LP_ZAP, PLATFORM_TOKEN, STAKING_VAULT, UNISWAP_V3 } from "@/src/farms";
+import { LENDING_POOL_ADDRESS, MARKETS, TREASURY_ADDRESS, USDG_ADDRESS } from "@/src/markets";
 
 function Toc({ items }: { items: { href: string; label: string }[] }) {
   return (
@@ -28,18 +30,19 @@ function Toc({ items }: { items: { href: string; label: string }[] }) {
 
 export function DocumentationPage({ pool }: { pool: PoolState | null }) {
   const listedSymbols = MARKETS.map((m) => m.symbol).join(", ");
+  const liveVaults = LP_VAULTS.filter((v) => v.vault);
   return (
-    <div className="space-y-5">
+    <div className="space-y-8">
       <PageHeader
         title="Documentation"
-        description="How the protocol works, end to end — assets, borrowing, liquidity, risk, liquidations, and fees."
+        description="Every part of the protocol, end to end — the lending pool, the swap router, the LP vaults, the zap, and the staking vault."
       />
 
       <StatGrid>
-        <Stat label="Pool" value={short(LENDING_POOL_ADDRESS)} />
+        <Stat label="Lending pool" value={short(LENDING_POOL_ADDRESS)} />
         <Stat label="Debt asset" value="USDG · 6 dp" />
         <Stat label="Markets" value={`${MARKETS.length} listed`} />
-        <Stat label="Borrow APR" value={pool ? pct(pool.borrowAprBps) : "—"} />
+        <Stat label="LP vaults live" value={`${liveVaults.length} of ${LP_VAULTS.length}`} />
       </StatGrid>
 
       <Toc
@@ -53,10 +56,15 @@ export function DocumentationPage({ pool }: { pool: PoolState | null }) {
           { href: "#docs-interest", label: "Interest" },
           { href: "#docs-liquidations", label: "Liquidations" },
           { href: "#docs-fees", label: "Fees" },
-          { href: "#docs-ux", label: "Transactions" },
+          { href: "#docs-swap", label: "Swap" },
+          { href: "#docs-vaults", label: "LP vaults" },
+          { href: "#docs-zap", label: "Zap" },
+          { href: "#docs-staking", label: "Staking" },
+          { href: "#docs-addresses", label: "Addresses" },
         ]}
       />
 
+      <Section title="Lending protocol">
       <div className="grid gap-4 lg:grid-cols-2">
         <Article id="docs-overview" eyebrow="01 · System model" title="What the protocol is" className="lg:col-span-2">
           <p>
@@ -256,13 +264,188 @@ export function DocumentationPage({ pool }: { pool: PoolState | null }) {
           </p>
         </Article>
       </div>
+      </Section>
 
-      <StatGrid>
-        <Stat label="Pool" value={short(LENDING_POOL_ADDRESS)} />
-        <Stat label="Treasury" value={short(pool?.treasury || TREASURY_ADDRESS)} />
-        <Stat label="Markets" value={`${MARKETS.length}`} />
-        <Stat label="Borrow APR" value={pool ? pct(pool.borrowAprBps) : "—"} />
-      </StatGrid>
+      <Section title="Trading, farms and staking">
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Article id="docs-swap" eyebrow="13 · Swap" title="Routing trades through Uniswap V3" className="lg:col-span-2">
+          <p>
+            The Swap page trades directly against Uniswap V3 pools on this chain. There is no aggregator, no relayer and
+            no off-chain order book: the interface asks the on-chain quoter for prices and your wallet signs a call to
+            the Uniswap router. Sushi is not used — its factory has no pools on this chain, and every tokenized-equity
+            pair with real depth is on Uniswap.
+          </p>
+          <p>
+            Quoting tries all three fee tiers — 0.05%, 0.30% and 1.00% — for the direct pair and keeps whichever returns
+            the most output. Only when no direct pool has depth does it fall back to two-hop routes through WETH or
+            USDG. Native ETH is accepted as an input and wrapped by the router; you never have to wrap it yourself. The
+            deployed router is the original SwapRouter, so each call carries an explicit deadline alongside the
+            minimum-output amount.
+          </p>
+          <ul>
+            <li>Quotes come from QuoterV2 by simulation, not from a cached price.</li>
+            <li>Slippage is capped at 1%; the minimum output is enforced by the router, not by the interface.</li>
+            <li>Price impact is shown before you sign, and flagged above 1%.</li>
+            <li>The oracle price shown alongside is the lending pool's risk feed, not the price you trade at.</li>
+          </ul>
+          <Callout title="Why the two prices differ">
+            The oracle is a Chainlink-style feed used to value collateral. The DEX price is whatever the pool's current
+            reserves imply. Outside market hours these drift apart, sometimes sharply. Neither is wrong; they measure
+            different things.
+          </Callout>
+        </Article>
+
+        <Article id="docs-vaults" eyebrow="14 · LP vaults" title="StockLpVault: one pair, one position, ERC-20 shares">
+          <p>
+            Each farm is an instance of <b className="font-medium text-ink">StockLpVault</b>, deployed once per pair. The
+            vault owns a single Uniswap V3 position covering the full price range, minted through the canonical position
+            manager. Depositors receive ERC-20 shares proportional to the liquidity their deposit added, so the share
+            supply tracks the position rather than a book of individual NFTs.
+          </p>
+          <p>
+            Both <code>deposit</code> and <code>withdraw</code> compound before they do anything else: the vault collects
+            the position's outstanding fees, takes the performance fee from what was collected, and reinvests the
+            remainder into the position. That ordering is what makes an external keeper optional — an idle vault defers
+            compounding, it does not lose the fees.
+          </p>
+          <ul>
+            <li>Performance fee: 10% of collected fees. The principal is never charged, on the way in or out.</li>
+            <li>Full range means the position is never out of range and never needs repositioning.</li>
+            <li>It also earns less than a concentrated position would — the trade-off is that it needs no management.</li>
+            <li>Withdrawals are partial or complete, with no lock-up and no exit penalty.</li>
+          </ul>
+          <Callout title="Fee tiers differ per vault" tone="warn">
+            The pairs are not all on the same tier — some are 0.05%, some 0.30%, one is 1.00%. The interface reads
+            <code> fee()</code> from each vault rather than assuming a default, because the tier feeds the slippage
+            bounds on every deposit and withdrawal.
+          </Callout>
+        </Article>
+
+        <Article id="docs-zap" eyebrow="15 · Zap" title="LpZap: entering a pair from a single asset">
+          <p>
+            <b className="font-medium text-ink">LpZap</b> turns one asset into a balanced vault deposit in a single
+            transaction. It takes the input, executes a list of swap legs against the Uniswap router, deposits the
+            resulting pair into the vault, and forwards the shares to you.
+          </p>
+          <p>
+            The legs are supplied by the caller, so the contract validates them rather than trusting them: every leg's
+            output must be one of the two pair tokens, and the legs together cannot spend more than the amount sent in.
+            After the deposit, every leftover balance — both pair tokens and any unspent input — is swept back to the
+            caller, so nothing can be stranded in the contract.
+          </p>
+          <ul>
+            <li>Accepts native ETH or an ERC-20 input.</li>
+            <li>Balances are credited by measured delta, so fee-on-transfer tokens cannot break the accounting.</li>
+            <li>Slippage floors are derived from the pool's current price, not passed in as zero.</li>
+          </ul>
+        </Article>
+
+        <Article id="docs-staking" eyebrow="16 · Staking" title="MultiRewardStaking: one stake, many reward streams" className="lg:col-span-2">
+          <p>
+            The staking vault takes a single asset — the platform token — and pays out an arbitrary number of partner
+            reward tokens simultaneously. Accounting follows the Synthetix MultiRewards pattern: each reward token has
+            its own <code>rewardPerTokenStored</code> index, so adding a new partner does not require existing stakers to
+            unstake, restake, or claim first.
+          </p>
+          <p>
+            Streams are funded, never minted. A partner transfers tokens in and calls <code>notifyRewardAmount</code>,
+            which measures the balance actually received — not the amount requested — so a token that burns on transfer
+            cannot desynchronise the schedule from the balance. The reward then pays out linearly over the stream's
+            duration.
+          </p>
+          <div className="grid gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-2 lg:grid-cols-4 [&>div]:bg-surface [&>div]:p-4">
+            {[
+              ["Exit penalty", "10% of the amount unstaked, hard-capped in the contract at 10%."],
+              ["Where it goes", "Redistributed to the stakers who stay, as a claimable balance of the staking token."],
+              ["Owner powers", "The rate can only be lowered, never raised above the cap it launched at."],
+              ["Lock-up", "None. Rewards already earned stay claimable whether you stay or leave."],
+            ].map(([t, d]) => (
+              <div key={t}>
+                <p className="text-[14px] font-semibold text-ink">{t}</p>
+                <p className="mt-1 text-[13.5px] leading-relaxed text-ink-3">{d}</p>
+              </div>
+            ))}
+          </div>
+          <p>
+            The penalty is distributed through a separate index for the staking token itself, and the leaver's own
+            snapshot is advanced in the same transaction — so a departing staker cannot claim a share of the penalty they
+            just paid. If the last staker exits, there is no one to distribute to and the penalty goes to the fee
+            recipient instead.
+          </p>
+          <Callout title="Not deployed" tone="warn">
+            The platform token and the staking vault are written and tested but not yet on chain. The Stake page reads
+            its addresses from a single config file and goes live the moment they are filled in.
+          </Callout>
+        </Article>
+      </div>
+      </Section>
+
+      <Section id="docs-addresses" title="Deployed contracts" meta="Robinhood Chain · 4663">
+        <div className="grid gap-4 lg:grid-cols-2">
+          <AddressTable
+            title="Core"
+            rows={[
+              ["Lending pool", LENDING_POOL_ADDRESS],
+              ["USDG", USDG_ADDRESS],
+              ["Treasury", pool?.treasury || TREASURY_ADDRESS],
+              ["LpZap", LP_ZAP],
+              ["Uniswap factory", UNISWAP_V3.factory],
+              ["Position manager", UNISWAP_V3.positionManager],
+              ["WETH9", UNISWAP_V3.weth9],
+              ["Platform token", PLATFORM_TOKEN],
+              ["Staking vault", STAKING_VAULT],
+            ]}
+          />
+          <AddressTable
+            title="LP vaults"
+            rows={liveVaults.map((v) => [`${v.symbol} / USDG`, v.vault] as [string, string])}
+            footer={`The remaining ${LP_VAULTS.length - liveVaults.length} listed pairs trade on Uniswap but have no vault yet. They are listed on the Farms page under Other pools.`}
+          />
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+/** Contract directory. An unfilled address is shown as pending, never as blank. */
+function AddressTable({
+  title,
+  rows,
+  footer,
+}: {
+  title: string;
+  rows: [string, string][];
+  footer?: string;
+}) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-line">
+      <p className="border-b border-line bg-surface-2 px-4 py-2.5 text-[12.5px] font-semibold tracking-[0.1em] text-ink-3 uppercase">
+        {title}
+      </p>
+      <dl className="divide-y divide-[var(--color-line)]">
+        {rows.map(([label, address]) => (
+          <div key={label} className="flex items-baseline justify-between gap-4 px-4 py-2.5">
+            <dt className="truncate text-[14px] text-ink-2">{label}</dt>
+            <dd className="shrink-0 font-mono text-[13px]">
+              {address ? (
+                <a
+                  href={explorer(address, "address")}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-ink-3 transition-colors hover:text-accent"
+                >
+                  {short(address)}
+                </a>
+              ) : (
+                <span className="font-sans text-[13.5px] text-ink-4">Not deployed</span>
+              )}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {footer && (
+        <p className="border-t border-line px-4 py-3 text-[13px] leading-relaxed text-ink-4">{footer}</p>
+      )}
     </div>
   );
 }
@@ -271,18 +454,22 @@ export function DocumentationPage({ pool }: { pool: PoolState | null }) {
 
 export function LearnPage({ go }: { go: (tab: DeskTab) => void }) {
   return (
-    <div className="space-y-5">
+    <div className="space-y-8">
       <PageHeader
         title="Learn"
-        description="Keep the asset, use the value. How tokenized stocks, collateral, and health factor fit together."
+        description="Two ways to use the same wallet: borrow against what you hold, or put it to work earning fees. Start here."
       />
 
       <div className="grid gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2 lg:grid-cols-4 [&>div]:bg-surface [&>div]:p-5">
         {[
           { n: "01", t: "ETH", d: "Native gas asset for Robinhood Chain. You need it for approvals, deposits, borrows, repays, and withdrawals." },
-          { n: "02", t: "WETH", d: "Wrapped ETH — the ERC-20 form that smart contracts can move. Verified here at 0x0Bd7…AD73, 18 decimals." },
-          { n: "03", t: "Stock tokens", d: "The collateral assets for this pool. They track equity or ETF exposure and can be posted when the market is listed and the oracle is live." },
-          { n: "04", t: "USDG", d: "The debt and liquidity asset. Borrowers receive USDG, suppliers deposit it. 6 decimals, unlike 18-decimal stock tokens." },
+          { n: "02", t: "USDG", d: "The debt, liquidity and quote asset. Borrowers receive USDG, suppliers deposit it, every pool is priced in it. 6 decimals." },
+          { n: "03", t: "Stock tokens", d: "Tokenized equity and ETF exposure. Collateral for the lending pool and one side of every farm pair. 18 decimals." },
+          { n: "04", t: "Health factor", d: "The safety score of a borrow. Above 1.0 you are above the liquidation line; below it, anyone can liquidate you." },
+          { n: "05", t: "LP position", d: "Liquidity you place in a trading pool. Traders swap against it and pay you a fee on every trade." },
+          { n: "06", t: "Vault share", d: "What a farm deposit gives you back — an ERC-20 claim on a slice of the vault's pool position and the fees it has collected." },
+          { n: "07", t: "Fee APR", d: "The last 24 hours of pool fees, annualised. A snapshot of a moving number, not a promised rate." },
+          { n: "08", t: "Impermanent loss", d: "The cost of providing liquidity: when a price moves, you end up holding more of the side that fell." },
         ].map((c) => (
           <div key={c.n}>
             <p className="text-[12px] font-semibold tracking-[0.14em] text-ink-4 uppercase">{c.n}</p>
@@ -299,10 +486,17 @@ export function LearnPage({ go }: { go: (tab: DeskTab) => void }) {
           { href: "#learn-lending", label: "Why borrow" },
           { href: "#learn-health", label: "Health factor" },
           { href: "#learn-flow", label: "Borrower flow" },
+          { href: "#learn-farming", label: "Farming" },
+          { href: "#learn-vault", label: "How the vault works" },
+          { href: "#learn-il", label: "Impermanent loss" },
+          { href: "#learn-zap", label: "One-token entry" },
+          { href: "#learn-exit", label: "Getting your money out" },
+          { href: "#learn-staking", label: "Staking" },
           { href: "#learn-risks", label: "Risks" },
         ]}
       />
 
+      <Section title="Part one · Borrowing against what you hold">
       <div className="grid gap-4 lg:grid-cols-2">
         <Article id="learn-tokenized" eyebrow="01 · Foundation" title="What tokenized stocks are" className="lg:col-span-2">
           <p>
@@ -392,12 +586,163 @@ export function LearnPage({ go }: { go: (tab: DeskTab) => void }) {
             ))}
           </div>
         </Article>
+      </div>
+      </Section>
 
-        <Article id="learn-risks" eyebrow="07 · Risks" title="What to understand before signing" className="lg:col-span-2">
+      <Section title="Part two · Earning on what you hold">
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Article
+          id="learn-farming"
+          eyebrow="01 · Farming"
+          title="What providing liquidity actually is"
+          className="lg:col-span-2"
+        >
+          <p>
+            Every swap on this chain trades against a pool — a pile of two tokens sitting in a contract. Someone has to
+            put those two tokens there. That someone is a liquidity provider, and in exchange for lending the pool
+            inventory they collect a cut of every trade that passes through it.
+          </p>
+          <p>
+            So a farm position is not a deposit that pays interest. You are the counterparty on the other side of other
+            people's trades. When someone buys NVDA from the NVDA / USDG pool, they hand USDG to the pool and take NVDA
+            out — and pay the pool's fee, which is split among everyone who supplied it.
+          </p>
+          <ul>
+            <li>You supply both sides of a pair, for example NVDA and USDG.</li>
+            <li>Traders swap through the pool and pay a fee — 0.05%, 0.30% or 1.00%, depending on the pair.</li>
+            <li>Your share of those fees accrues to your position, in proportion to how much of the pool is yours.</li>
+            <li>You can take the position back, plus the fees it earned, whenever you like.</li>
+          </ul>
+          <Callout title="The fee is the whole product">
+            Nothing is minted, no yield is promised, and no one pays you out of a treasury. The entire return is a share
+            of the fees real traders paid. If the pool goes quiet, the return goes to zero — it does not go negative from
+            the fee side, but see impermanent loss below.
+          </Callout>
+        </Article>
+
+        <Article id="learn-vault" eyebrow="02 · Vaults" title="What the vault does for you">
+          <p>
+            Providing liquidity on Uniswap V3 by hand means minting an NFT position, choosing a price range, and coming
+            back regularly to collect fees and put them back to work. The vault does all of that for you and gives you a
+            plain ERC-20 share instead.
+          </p>
+          <p>
+            The vault holds one position covering the full price range, so it never falls out of range and never has to
+            be repositioned. Every time anyone deposits or withdraws, the vault first collects the outstanding fees and
+            folds them back into the position — which is why your share is worth a little more each time the pool trades.
+          </p>
+          <ul>
+            <li>Deposit either both tokens or a single one; you get shares back.</li>
+            <li>Fees compound into the position automatically. There is nothing to claim.</li>
+            <li>The platform keeps 10% of the fees earned. Your deposit itself is never charged.</li>
+            <li>Withdraw any percentage at any time — no lock, no exit fee on farms.</li>
+          </ul>
+        </Article>
+
+        <Article id="learn-apr" eyebrow="03 · Reading the number" title="What the fee APR does and does not mean">
+          <p>
+            The APR on each pair is the last 24 hours of trading volume, multiplied by the pool's fee tier, annualised,
+            and divided by the pool's liquidity. It is arithmetic on a real, observed number — not a projection.
+          </p>
+          <p>
+            Two things make it optimistic. Volume is volatile: one busy day can make a quiet pair look spectacular. And
+            the figure describes the whole pool, where concentrated positions do most of the work — a full-range position
+            like the vault's earns a fraction of it, because its liquidity is spread across every price instead of piled
+            where trading happens.
+          </p>
+          <Callout title="Treat it as a ranking, not a rate" tone="warn">
+            The APR column is good for telling you which pair is busy. It is not a rate you should expect to receive.
+          </Callout>
+        </Article>
+
+        <Article
+          id="learn-il"
+          eyebrow="04 · The real risk"
+          title="Impermanent loss, with actual numbers"
+          className="lg:col-span-2"
+        >
+          <p>
+            A pool always rebalances against you. When the price of a stock token rises, traders buy it out of the pool
+            and leave USDG behind — so you end up holding less of the asset that went up and more of the one that did
+            not. When it falls, the reverse. Compared with simply holding both tokens in your wallet, you are always
+            slightly behind. That gap is impermanent loss.
+          </p>
+          <p>
+            It is called impermanent because it closes if the price returns to where you entered. It becomes permanent
+            the moment you withdraw at a different price.
+          </p>
+          <div className="grid gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-3 [&>div]:bg-surface [&>div]:p-4">
+            {[
+              ["Price +25%", "≈ 0.6% behind holding", "Fees usually cover this."],
+              ["Price +100%", "≈ 5.7% behind holding", "Needs a busy pool to be worth it."],
+              ["Price +300%", "≈ 20% behind holding", "Fees rarely cover a move this size."],
+            ].map(([t, d, n]) => (
+              <div key={t}>
+                <p className="text-[14px] font-semibold text-ink">{t}</p>
+                <p className="mt-1 text-[13.5px] text-ink-2">{d}</p>
+                <p className="mt-1 text-[13px] text-ink-4">{n}</p>
+              </div>
+            ))}
+          </div>
+          <p>
+            The practical rule: farming pays when a pair trades a lot and moves a little. If you have a strong directional
+            view on a stock, holding it is the cleaner expression of that view.
+          </p>
+        </Article>
+
+        <Article id="learn-zap" eyebrow="05 · One-token entry" title="Depositing without owning both sides">
+          <p>
+            A pool needs both tokens, but you rarely hold both in the right proportion. The zap solves that in a single
+            transaction: it takes the one asset you have, swaps the right amount of it into the other side at the current
+            price, and deposits the pair into the vault.
+          </p>
+          <p>
+            Two consequences worth knowing. You pay a swap fee and a little price impact on the half that gets converted,
+            so a zap costs marginally more than arriving with a balanced pair. And whatever the position could not use
+            comes straight back to your wallet in the same transaction — nothing is left stranded in the contract.
+          </p>
+        </Article>
+
+        <Article id="learn-exit" eyebrow="06 · Exiting" title="Where your position lives and how to leave">
+          <p>
+            Once you deposit, the pair appears under <b className="font-medium text-ink">Your positions</b> at the top of
+            the Farms page. Open it and the detail page shows your shares, your percentage of the vault, and what those
+            shares are worth right now.
+          </p>
+          <p>
+            That withdrawable figure is not an estimate. The page simulates the actual withdrawal against the contract
+            with your address, so the two numbers shown are exactly what you would receive if you signed. Pick 25, 50, 75
+            or 100% and confirm; the vault collects the position's outstanding fees first, so your share of them leaves
+            with the principal.
+          </p>
+        </Article>
+
+        <Article id="learn-staking" eyebrow="07 · Staking" title="Staking STERLING for partner rewards" className="lg:col-span-2">
+          <p>
+            The Stake page is a different mechanism from farming. You deposit one token — STERLING, the platform token —
+            and earn several partner tokens at once. Partners fund a reward stream that pays out over a fixed period;
+            nothing is minted to pay you, so the rewards are only ever as large as what a partner actually deposited.
+          </p>
+          <p>
+            There is no lock-up, but leaving early has a price: a portion of whatever you unstake is handed to the
+            stakers who stay, capped at 10%. It exists so that people who hold through a full reward period are paid for
+            it by the people who do not. Rewards already earned stay claimable either way.
+          </p>
+          <Callout title="Not live yet" tone="warn">
+            The staking vault and the platform token are written and tested but not deployed. The page stays honest about
+            that rather than advertising a yield that does not exist.
+          </Callout>
+        </Article>
+      </div>
+      </Section>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Article id="learn-risks" eyebrow="Before you sign" title="What to understand" className="lg:col-span-2">
           <p>
             Tokenized assets make markets programmable but do not remove risk. Lending adds smart contract risk, oracle
-            risk, liquidation risk, liquidity risk, market-hours risk, issuer risk, wallet risk, and user error. A
-            polished interface does not guarantee a safe position.
+            risk, liquidation risk, liquidity risk, market-hours risk, issuer risk, wallet risk, and user error. Farming
+            adds impermanent loss and custody of your deposit by an unaudited contract. A polished interface does not
+            guarantee a safe position.
           </p>
           <div className="grid gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-2 lg:grid-cols-3 [&>div]:bg-surface [&>div]:p-4">
             {[
@@ -405,8 +750,11 @@ export function LearnPage({ go }: { go: (tab: DeskTab) => void }) {
               ["Oracle risk", "Bad, stale, paused, or delayed prices can block actions or shift risk fast."],
               ["Liquidity risk", "Borrowing needs supplied USDG. Withdrawals need idle liquidity."],
               ["Market gap risk", "Stock-token prices can move sharply around opens, closes, and news."],
-              ["Smart contract risk", "Code can contain bugs even when carefully designed."],
+              ["Smart contract risk", "Code can contain bugs even when carefully designed. The vaults are unaudited."],
               ["Approval risk", "Approving the wrong spender or token can expose funds. Verify addresses."],
+              ["Impermanent loss", "A farm position underperforms simply holding when the price moves far."],
+              ["Custody risk", "A vault deposit is held by the vault contract, not by your wallet."],
+              ["Admin risk", "Vault owner and fee recipient are a single key until they move to a multisig."],
             ].map(([t, d]) => (
               <div key={t}>
                 <p className="text-[14px] font-semibold text-ink">{t}</p>
@@ -418,7 +766,10 @@ export function LearnPage({ go }: { go: (tab: DeskTab) => void }) {
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Button variant="primary" onClick={() => go("borrow")}>
+        <Button variant="primary" onClick={() => go("farms")}>
+          Explore farms
+        </Button>
+        <Button variant="outline" onClick={() => go("borrow")}>
           Start with collateral
         </Button>
         <Button variant="outline" onClick={() => go("lending")}>

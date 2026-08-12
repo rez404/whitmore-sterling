@@ -1,8 +1,9 @@
 import * as React from "react";
 import { formatUnits, parseUnits } from "ethers";
 import { ArrowDown, ArrowUpRight, Copy, Info } from "lucide-react";
+import { AmountField, BalanceLine } from "@/src/components/ui/amount-field";
 import { Button } from "@/src/components/ui/button";
-import { Card, CardBody, CardHeader } from "@/src/components/ui/card";
+import { Card, CardBody } from "@/src/components/ui/card";
 import { Money, Status } from "@/src/components/ui/figure";
 import { Figure, Section } from "@/src/components/ui/table";
 import { TokenIcon, TokenSelect } from "@/src/components/ui/token";
@@ -142,10 +143,10 @@ export function SwapPage({
         {/* ------------------------------- trade card ------------------------------- */}
         <Card className="self-start overflow-visible">
           <CardBody className="space-y-1.5 p-4">
-            <Leg
+            <AmountField
               caption="You pay"
               value={amount}
-              onChange={(v) => setAmount(v.replace(/[^0-9.]/g, ""))}
+              onChange={setAmount}
               selector={
                 <TokenSelect
                   value={input.key}
@@ -155,9 +156,10 @@ export function SwapPage({
               }
               footer={
                 account && balance != null ? (
-                  <button
-                    type="button"
-                    onClick={() => {
+                  <BalanceLine
+                    amount={`${amt(balance, input.native ? 5 : 2, input.decimals)} ${input.key}`}
+                    maxLabel={input.native ? "Max · less gas" : "Max"}
+                    onMax={() => {
                       const spendable = input.native
                         ? balance > GAS_BUFFER_WEI
                           ? balance - GAS_BUFFER_WEI
@@ -165,12 +167,9 @@ export function SwapPage({
                         : balance;
                       setAmount(formatUnits(spendable, input.decimals));
                     }}
-                    className="text-[13px] text-ink-3 transition-colors hover:text-accent"
-                  >
-                    Balance {amt(balance, input.native ? 5 : 2, input.decimals)} · Max{input.native ? " (less gas)" : ""}
-                  </button>
+                  />
                 ) : (
-                  <span className="text-[13px] text-ink-4">Connect to see balance</span>
+                  <span className="text-ink-4">Connect to see balance</span>
                 )
               }
             />
@@ -181,7 +180,7 @@ export function SwapPage({
               </span>
             </div>
 
-            <Leg
+            <AmountField
               caption="You receive"
               value={quoting ? "" : outAmount}
               readOnly
@@ -201,9 +200,9 @@ export function SwapPage({
               }
               footer={
                 quoting ? (
-                  <span className="text-[13px] text-ink-4">Fetching best route…</span>
+                  <span className="text-ink-4">Fetching best route…</span>
                 ) : oraclePrice ? (
-                  <span className="text-[13px] text-ink-4">
+                  <span className="text-ink-4">
                     Oracle {priceFmt(oraclePrice.price)} · {timeAgo(oraclePrice.updatedAt)}
                   </span>
                 ) : undefined
@@ -327,46 +326,6 @@ export function SwapPage({
           </div>
         </Section>
       </div>
-    </div>
-  );
-}
-
-function Leg({
-  caption,
-  value,
-  onChange,
-  selector,
-  footer,
-  readOnly,
-  placeholder = "0.0",
-}: {
-  caption: string;
-  value: string;
-  onChange?: (v: string) => void;
-  selector: React.ReactNode;
-  footer?: React.ReactNode;
-  readOnly?: boolean;
-  placeholder?: string;
-}) {
-  return (
-    <div className="rounded-lg border border-line bg-surface-2 p-3.5">
-      <p className="text-[12.5px] font-medium tracking-wide text-ink-4 uppercase">{caption}</p>
-      <div className="mt-2 flex items-center gap-3">
-        <input
-          value={value}
-          onChange={onChange ? (e) => onChange(e.target.value) : undefined}
-          readOnly={readOnly}
-          inputMode="decimal"
-          placeholder={placeholder}
-          aria-label={caption}
-          className={cn(
-            "min-w-0 flex-1 bg-transparent text-[30px] font-semibold tabular-nums text-ink placeholder:text-ink-4 focus:outline-none",
-            readOnly && "text-ink-2",
-          )}
-        />
-        {selector}
-      </div>
-      {footer && <div className="mt-2 flex justify-end">{footer}</div>}
     </div>
   );
 }

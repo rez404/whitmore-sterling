@@ -1,17 +1,19 @@
 import * as React from "react";
 import { Contract, formatUnits, parseUnits } from "ethers";
-import { ArrowLeft, ExternalLink } from "lucide-react";
+import { ArrowDown, ArrowLeft, ExternalLink, Plus } from "lucide-react";
+import { AmountField, BalanceLine } from "@/src/components/ui/amount-field";
 import { Button } from "@/src/components/ui/button";
 import { Alert, AmountInput, Skeleton } from "@/src/components/ui/misc";
 import { Money, Status } from "@/src/components/ui/figure";
 import { DataTable, Figure, FigureRow, Num, Section, Td, Th } from "@/src/components/ui/table";
-import { TokenIcon, TokenPair } from "@/src/components/ui/token";
+import { TokenIcon, TokenPair, TokenSelect } from "@/src/components/ui/token";
 import { PageHeader } from "@/src/components/shell";
 import { cn } from "@/src/lib/utils";
 import { ERC20_ABI, MULTI_STAKING_ABI, V3_POOL_ABI, VAULT_ABI, provider, type PriceMap } from "@/src/lib/chain";
+import { GAS_BUFFER_WEI } from "@/src/lib/uniswap";
 import { amt, short } from "@/src/lib/format";
 import { fetchPairStatsBatch, fetchUsdPrices, feeApr, usdValue, type PairStats } from "@/src/lib/prices";
-import { LP_VAULTS, PLATFORM_TOKEN, STAKING_VAULT, UNISWAP_V3, type VaultPool } from "@/src/farms";
+import { LP_VAULTS, LP_ZAP, PLATFORM_TOKEN, STAKING_VAULT, UNISWAP_V3, type VaultPool } from "@/src/farms";
 import { USDG_ADDRESS } from "@/src/markets";
 
 export function FarmsPage({
@@ -334,37 +336,59 @@ function FarmDetail({
   const { pool, st, tier, apr } = row;
   const [amtStock, setAmtStock] = React.useState("");
   const [amtUsdg, setAmtUsdg] = React.useState("");
-  const [mode, setMode] = React.useState<"zap" | "pair">("zap");
+  const [mode, setMode] = React.useState<"zap" | "pair">(LP_ZAP ? "zap" : "pair");
   const [zapAsset, setZapAsset] = React.useState<"ETH" | "USDG">("ETH");
   const [zapAmount, setZapAmount] = React.useState("");
+  const [wallet, setWallet] = React.useState<{ eth: bigint; usdg: bigint; stock: bigint } | null>(null);
+
+  // What the depositor actually has to work with. Without this the Max buttons
+  // are guesses and the button says "Deposit" for an amount that will revert.
+  React.useEffect(() => {
+    if (!account) {
+      setWallet(null);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const [eth, usdg, stock] = await Promise.all([
+          provider.getBalance(account),
+          new Contract(pool.usdg, ERC20_ABI, provider).balanceOf(account),
+          new Contract(pool.stock, ERC20_ABI, provider).balanceOf(account),
+        ]);
+        if (!cancelled) setWallet({ eth: BigInt(eth), usdg: BigInt(usdg), stock: BigInt(stock) });
+      } catch {
+        /* rpc hiccup — keep the previous values rather than blanking the field */
+      }
+    };
+    load();
+    const id = window.setInterval(load, 45000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [account, pool.usdg, pool.stock]);
+
+  const parse = (v: string, decimals: number) => {
+    try {
+      return parseUnits(v || "0", decimals);
+    } catch {
+      return 0n;
+    }
+  };
+  const zapWei = parse(zapAmount, zapAsset === "ETH" ? 18 : debtDecimals);
+  const stockWei = parse(amtStock, 18);
+  const usdgWei = parse(amtUsdg, debtDecimals);
 
   const doZap = async () => {
     const native = zapAsset === "ETH";
-    let amount = 0n;
-    try {
-      amount = parseUnits(zapAmount || "0", native ? 18 : debtDecimals);
-    } catch {
-      amount = 0n;
-    }
-    if (amount <= 0n) return;
-    await zap(pool, native ? UNISWAP_V3.weth9 : USDG_ADDRESS, amount, native, `${zapAmount} ${zapAsset}`);
+    if (zapWei <= 0n) return;
+    await zap(pool, native ? UNISWAP_V3.weth9 : USDG_ADDRESS, zapWei, native, `${zapAmount} ${zapAsset}`);
   };
 
   const doDeposit = async () => {
     const stockIsToken0 = pool.token0.toLowerCase() === pool.stock.toLowerCase();
-    let stockAmt = 0n;
-    let usdgAmt = 0n;
-    try {
-      stockAmt = parseUnits(amtStock || "0", 18);
-    } catch {
-      stockAmt = 0n;
-    }
-    try {
-      usdgAmt = parseUnits(amtUsdg || "0", debtDecimals);
-    } catch {
-      usdgAmt = 0n;
-    }
-    await deposit(pool, stockIsToken0 ? stockAmt : usdgAmt, stockIsToken0 ? usdgAmt : stockAmt);
+    await deposit(pool, stockIsToken0 ? stockWei : usdgWei, stockIsToken0 ? usdgWei : stockWei);
   };
 
   const windows = st
@@ -377,6 +401,39 @@ function FarmDetail({
     : [];
   const peak = Math.max(...windows.map(([, v]) => v), 1);
   const baseShare = st && st.liquidityUsd > 0 ? ((st.liquidityBase * st.priceUsd) / st.liquidityUsd) * 100 : 50;
+
+  /* ----------------------------- deposit state ----------------------------- */
+
+  // A full-range position splits value evenly between the two sides, so the
+  // balanced counterpart of N stock is simply N × price in USDG. Off-ratio
+  // amounts are not lost — the vault returns whatever the position cannot use —
+  // but matching the ratio is what actually gets deployed.
+  const mark = st?.priceUsd ?? null;
+  const matchUsdg = mark != null && stockWei > 0n ? Number(formatUnits(stockWei, 18)) * mark : null;
+  const matchStock = mark != null && mark > 0 && usdgWei > 0n ? Number(formatUnits(usdgWei, debtDecimals)) / mark : null;
+
+  const zapBalance = zapAsset === "ETH" ? wallet?.eth : wallet?.usdg;
+  const zapDecimals = zapAsset === "ETH" ? 18 : debtDecimals;
+  const zapOverBalance = zapBalance != null && zapWei > zapBalance;
+  const pairOverBalance = wallet != null && (stockWei > wallet.stock || usdgWei > wallet.usdg);
+  const zapReady = zapWei > 0n && !zapOverBalance;
+  const pairReady = (stockWei > 0n || usdgWei > 0n) && !pairOverBalance;
+
+  const depositLabel = !account
+    ? "Connect wallet"
+    : pending
+      ? "Working…"
+      : mode === "zap"
+        ? zapWei <= 0n
+          ? "Enter an amount"
+          : zapOverBalance
+            ? `Not enough ${zapAsset}`
+            : "Zap in"
+        : stockWei <= 0n && usdgWei <= 0n
+          ? "Enter an amount"
+          : pairOverBalance
+            ? "Amount exceeds balance"
+            : "Deposit";
 
   return (
     <div className="space-y-7">
@@ -482,84 +539,217 @@ function FarmDetail({
         </Section>
       </div>
 
-      <Section title="Add liquidity">
+      <Section
+        title="Add liquidity"
+        meta={tier != null ? `Uniswap V3 · ${(tier * 100).toFixed(2)}% fee tier` : undefined}
+      >
         {!pool.vault ? (
           <Alert tone="warn" title="No vault for this pair yet">
             This pool is live and earning fees, but no vault has been deployed for it. Vaults exist for the
             highest-volume pairs; the rest can be added later.
           </Alert>
         ) : (
-          <div className="max-w-2xl space-y-4">
-            <div className="flex gap-1 rounded-md border border-line bg-surface p-1">
-              {(
-                [
-                  ["zap", "One token"],
-                  ["pair", "Both tokens"],
-                ] as const
-              ).map(([m, label]) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setMode(m)}
-                  className={cn(
-                    "h-9 flex-1 rounded-sm text-[14px] font-medium transition-colors",
-                    mode === m ? "bg-surface-3 text-ink" : "text-ink-3 hover:text-ink-2",
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,460px)_minmax(0,420px)] lg:items-start lg:gap-12">
+            {/* ------------------------------- the ticket ------------------------------ */}
+            <div className="space-y-2">
+              <div className="mb-4 flex gap-1 rounded-md border border-line bg-surface-2 p-1">
+                {(
+                  [
+                    ["zap", "One token", !LP_ZAP],
+                    ["pair", "Both tokens", false],
+                  ] as const
+                ).map(([m, label, disabled]) => (
+                  <button
+                    key={m}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => setMode(m)}
+                    className={cn(
+                      "h-9 flex-1 rounded-sm text-[14px] font-medium transition-colors disabled:cursor-not-allowed disabled:text-ink-4",
+                      mode === m ? "bg-surface-3 text-ink" : "text-ink-3 hover:text-ink-2",
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {mode === "zap" ? (
+                <>
+                  <AmountField
+                    caption="You deposit"
+                    value={zapAmount}
+                    onChange={setZapAmount}
+                    tone={zapOverBalance ? "warn" : undefined}
+                    selector={
+                      <TokenSelect
+                        value={zapAsset}
+                        onChange={(s) => setZapAsset(s as "ETH" | "USDG")}
+                        options={[
+                          { symbol: "ETH", name: "Ether · gas asset" },
+                          { symbol: "USDG", name: "Global Dollar" },
+                        ]}
+                      />
+                    }
+                    footer={
+                      account && zapBalance != null ? (
+                        <BalanceLine
+                          amount={`${amt(zapBalance, zapAsset === "ETH" ? 5 : 2, zapDecimals)} ${zapAsset}`}
+                          maxLabel={zapAsset === "ETH" ? "Max · less gas" : "Max"}
+                          onMax={() => {
+                            const spendable =
+                              zapAsset === "ETH"
+                                ? zapBalance > GAS_BUFFER_WEI
+                                  ? zapBalance - GAS_BUFFER_WEI
+                                  : 0n
+                                : zapBalance;
+                            setZapAmount(formatUnits(spendable, zapDecimals));
+                          }}
+                        />
+                      ) : (
+                        <span className="text-ink-4">Connect to see balance</span>
+                      )
+                    }
+                  />
+
+                  <Connector icon={<ArrowDown className="size-4 text-ink-2" />} />
+
+                  {/* What comes back is a vault share, not a token you can pick — so it
+                      is shown as a destination rather than a second editable leg. */}
+                  <div className="rounded-lg border border-line bg-surface-2 p-3.5">
+                    <p className="text-[12.5px] font-medium tracking-wide text-ink-4 uppercase">You receive</p>
+                    <div className="mt-2.5 flex items-center gap-3">
+                      <TokenPair a={pool.symbol} b="USDG" size="lg" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[17px] font-semibold text-ink">{pool.symbol} / USDG</p>
+                        <p className="truncate text-[13.5px] text-ink-3">Vault shares · full-range position</p>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <AmountField
+                    caption="You deposit"
+                    note={matchUsdg != null ? <Money value={matchUsdg} decimals={2} /> : undefined}
+                    value={amtStock}
+                    onChange={setAmtStock}
+                    token={pool.symbol}
+                    tone={wallet && stockWei > wallet.stock ? "warn" : undefined}
+                    footer={
+                      account && wallet ? (
+                        <BalanceLine
+                          amount={`${amt(wallet.stock, 4)} ${pool.symbol}`}
+                          onMax={() => setAmtStock(formatUnits(wallet.stock, 18))}
+                        />
+                      ) : (
+                        <span className="text-ink-4">Connect to see balance</span>
+                      )
+                    }
+                  />
+
+                  <Connector icon={<Plus className="size-4 text-ink-2" />} />
+
+                  <AmountField
+                    caption="And"
+                    value={amtUsdg}
+                    onChange={setAmtUsdg}
+                    token="USDG"
+                    tone={wallet && usdgWei > wallet.usdg ? "warn" : undefined}
+                    footer={
+                      account && wallet ? (
+                        <BalanceLine
+                          amount={`${amt(wallet.usdg, 2, debtDecimals)} USDG`}
+                          onMax={() => setAmtUsdg(formatUnits(wallet.usdg, debtDecimals))}
+                        />
+                      ) : (
+                        <span className="text-ink-4">Connect to see balance</span>
+                      )
+                    }
+                  />
+
+                  {/* Only offered when one side is filled and the other is not —
+                      otherwise it would silently overwrite a deliberate amount. */}
+                  {mark != null && (
+                    <>
+                      {stockWei > 0n && usdgWei === 0n && matchUsdg != null && (
+                        <MatchRatio
+                          onClick={() => setAmtUsdg(matchUsdg.toFixed(Math.min(debtDecimals, 6)))}
+                          text={`Balance the pair — add ${matchUsdg.toLocaleString(undefined, { maximumFractionDigits: 2 })} USDG`}
+                        />
+                      )}
+                      {usdgWei > 0n && stockWei === 0n && matchStock != null && (
+                        <MatchRatio
+                          onClick={() => setAmtStock(matchStock.toFixed(8))}
+                          text={`Balance the pair — add ${matchStock.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${pool.symbol}`}
+                        />
+                      )}
+                    </>
                   )}
+                </>
+              )}
+
+              <div className="pt-2">
+                <Button
+                  variant="primary"
+                  size="lg"
+                  className="w-full"
+                  disabled={!!pending || (!!account && (mode === "zap" ? !zapReady : !pairReady))}
+                  onClick={() => (account ? (mode === "zap" ? doZap() : doDeposit()) : connect())}
                 >
-                  {label}
-                </button>
-              ))}
+                  {depositLabel}
+                </Button>
+              </div>
             </div>
 
-            {mode === "zap" ? (
-              <div className="space-y-3">
-                <div className="grid gap-3 md:grid-cols-[1fr_auto_auto] md:items-end">
-                  <label className="space-y-1.5">
-                    <span className="block text-[14px] font-medium text-ink-2">Amount</span>
-                    <AmountInput value={zapAmount} onChange={setZapAmount} unit={zapAsset} />
-                  </label>
-                  <label className="space-y-1.5">
-                    <span className="block text-[14px] font-medium text-ink-2">Pay with</span>
-                    <select
-                      value={zapAsset}
-                      onChange={(e) => setZapAsset(e.target.value as "ETH" | "USDG")}
-                      className="h-10 rounded-md border border-line bg-surface-2 px-3 text-[14px] font-medium text-ink focus:outline-none"
-                    >
-                      <option value="ETH">ETH</option>
-                      <option value="USDG">USDG</option>
-                    </select>
-                  </label>
-                  <Button variant="primary" disabled={!!pending} onClick={() => (account ? doZap() : connect())}>
-                    {account ? "Zap in" : "Connect wallet"}
-                  </Button>
-                </div>
-                <p className="text-[13px] leading-snug text-ink-4">
-                  One transaction: your {zapAsset} is swapped into both sides of the pair and deposited. Anything the
-                  position cannot use comes straight back to you.
+            {/* ------------------------------ what you get ----------------------------- */}
+            <div className="space-y-4">
+              <dl className="space-y-2.5 text-[14px]">
+                <Detail label="Position range" value="Full range" />
+                <Detail label="Fee tier" value={tier != null ? `${(tier * 100).toFixed(2)}%` : "—"} />
+                <Detail
+                  label="Pool fee APR"
+                  value={apr != null ? `${apr.toFixed(1)}%` : "—"}
+                  tone={apr != null ? "good" : undefined}
+                />
+                <Detail label="Vault fee" value="10% of fees earned" />
+                <Detail label="Charged on deposit" value="Nothing" />
+                <Detail label="Max slippage" value="1.00%" />
+                {mark != null && (
+                  <Detail
+                    label="Current price"
+                    value={`1 ${pool.symbol} ≈ ${mark.toLocaleString(undefined, { maximumFractionDigits: 2 })} USDG`}
+                  />
+                )}
+              </dl>
+
+              <div className="space-y-3 border-t border-line pt-4 text-[13.5px] leading-relaxed text-ink-3">
+                <p>
+                  {mode === "zap" ? (
+                    <>
+                      One transaction. Your {zapAsset} is swapped into both sides of the pair at the current price and
+                      deposited into the vault. Whatever the position cannot use comes straight back to your wallet.
+                    </>
+                  ) : (
+                    <>
+                      Both sides are deposited at the pool's current ratio. Any excess on either side is returned in the
+                      same transaction, so an unbalanced entry costs you nothing but gas.
+                    </>
+                  )}
+                </p>
+                <p>
+                  The vault holds one full-range Uniswap V3 position and collects its fees back into it on every deposit
+                  and withdrawal, so your share grows without you doing anything.
+                </p>
+                <p className="text-ink-4">
+                  Providing liquidity is not the same as holding. If {pool.symbol} moves sharply against USDG you end up
+                  with more of the side that fell — impermanent loss — which can outweigh the fees earned. The vault
+                  contract is unaudited and custodial.
                 </p>
               </div>
-            ) : (
-            <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
-              <label className="space-y-1.5">
-                <span className="block text-[14px] font-medium text-ink-2">{pool.symbol}</span>
-                <AmountInput value={amtStock} onChange={setAmtStock} unit={pool.symbol} />
-              </label>
-              <label className="space-y-1.5">
-                <span className="block text-[14px] font-medium text-ink-2">USDG</span>
-                <AmountInput value={amtUsdg} onChange={setAmtUsdg} unit="USDG" />
-              </label>
-              <Button variant="primary" disabled={!!pending} onClick={() => (account ? doDeposit() : connect())}>
-                {account ? "Deposit" : "Connect wallet"}
-              </Button>
             </div>
-            )}
           </div>
         )}
-        <p className="pt-1 text-[13px] leading-relaxed text-ink-4">
-          Providing liquidity is not the same as holding. If {pool.symbol} moves sharply against USDG you end up with
-          more of the side that fell — impermanent loss — which can outweigh the fees earned. The vault contract is
-          unaudited and custodial.
-        </p>
       </Section>
 
       <Section title="Your position" meta={`${pool.symbol} / USDG vault`}>
@@ -567,6 +757,38 @@ function FarmDetail({
           <VaultPosition pool={pool} account={account} pending={pending} withdraw={withdraw} symbol={pool.symbol} />
         </div>
       </Section>
+    </div>
+  );
+}
+
+/** The joint between two stacked legs — an arrow for a swap, a plus for a pair. */
+function Connector({ icon }: { icon: React.ReactNode }) {
+  return (
+    <div className="relative flex h-0 justify-center">
+      <span className="absolute -top-4 z-10 flex size-8 items-center justify-center rounded-full border border-line-strong bg-surface-2">
+        {icon}
+      </span>
+    </div>
+  );
+}
+
+function MatchRatio({ text, onClick }: { text: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full rounded-md border border-dashed border-line px-3 py-2 text-left text-[13.5px] text-ink-3 transition-colors hover:border-line-strong hover:text-ink"
+    >
+      {text}
+    </button>
+  );
+}
+
+function Detail({ label, value, tone }: { label: string; value: string; tone?: "good" }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4">
+      <dt className="text-ink-4">{label}</dt>
+      <dd className={cn("truncate text-right tabular-nums", tone === "good" ? "text-up" : "text-ink-2")}>{value}</dd>
     </div>
   );
 }
