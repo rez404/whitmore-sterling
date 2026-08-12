@@ -18,6 +18,11 @@ contract StakingRewards is Ownable, ReentrancyGuard, Pausable {
     IERC20 public immutable rewardsToken;
     IERC20 public immutable stakingToken;
 
+    uint256 public constant BPS = 10_000;
+    uint256 public constant MAX_PERFORMANCE_FEE_BPS = 2_000; // hard cap: 20%
+    uint256 public performanceFeeBps = 1_000;                // 10% platform fee on rewards earned
+    address public feeRecipient;
+
     uint256 public periodFinish;
     uint256 public rewardRate;
     uint256 public rewardsDuration = 7 days;
@@ -36,11 +41,15 @@ contract StakingRewards is Ownable, ReentrancyGuard, Pausable {
     event RewardAdded(uint256 reward);
     event RewardsDurationUpdated(uint256 newDuration);
     event Recovered(address indexed token, uint256 amount);
+    event PerformanceFeeUpdated(uint256 bps);
+    event FeeRecipientUpdated(address indexed recipient);
+    event PerformanceFeePaid(uint256 amount);
 
-    constructor(address initialOwner, address _rewardsToken, address _stakingToken) Ownable(initialOwner) {
-        require(_rewardsToken != address(0) && _stakingToken != address(0), "zero token");
+    constructor(address initialOwner, address _rewardsToken, address _stakingToken, address _feeRecipient) Ownable(initialOwner) {
+        require(_rewardsToken != address(0) && _stakingToken != address(0) && _feeRecipient != address(0), "zero address");
         rewardsToken = IERC20(_rewardsToken);
         stakingToken = IERC20(_stakingToken);
+        feeRecipient = _feeRecipient;
     }
 
     modifier updateReward(address account) {
@@ -93,8 +102,14 @@ contract StakingRewards is Ownable, ReentrancyGuard, Pausable {
         uint256 reward = rewards[msg.sender];
         if (reward > 0) {
             rewards[msg.sender] = 0;
-            rewardsToken.safeTransfer(msg.sender, reward);
-            emit RewardPaid(msg.sender, reward);
+            uint256 fee = reward * performanceFeeBps / BPS;   // 10% platform fee on rewards earned
+            if (fee > 0) {
+                rewardsToken.safeTransfer(feeRecipient, fee);
+                emit PerformanceFeePaid(fee);
+            }
+            uint256 net = reward - fee;
+            rewardsToken.safeTransfer(msg.sender, net);
+            emit RewardPaid(msg.sender, net);
         }
     }
 
@@ -125,6 +140,18 @@ contract StakingRewards is Ownable, ReentrancyGuard, Pausable {
         require(_rewardsDuration > 0, "zero duration");
         rewardsDuration = _rewardsDuration;
         emit RewardsDurationUpdated(_rewardsDuration);
+    }
+
+    function setPerformanceFee(uint256 _bps) external onlyOwner {
+        require(_bps <= MAX_PERFORMANCE_FEE_BPS, "fee too high");
+        performanceFeeBps = _bps;
+        emit PerformanceFeeUpdated(_bps);
+    }
+
+    function setFeeRecipient(address _feeRecipient) external onlyOwner {
+        require(_feeRecipient != address(0), "zero address");
+        feeRecipient = _feeRecipient;
+        emit FeeRecipientUpdated(_feeRecipient);
     }
 
     /// @notice Recover tokens sent by mistake. Never the staking token (that belongs to stakers).
