@@ -1,2 +1,5 @@
 .vercel
 .env*
+dist
+.shots/
+.shot.mjs

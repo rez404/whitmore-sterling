@@ -10,6 +10,17 @@ export default defineConfig({
       "@": fileURLToPath(new URL("./", import.meta.url)),
     },
   },
+  server: {
+    // `api/rpc.js` is a Vercel function and does not exist under `vite dev`, so
+    // proxy the same path straight to the upstream RPC while developing.
+    proxy: {
+      "/api/rpc": {
+        target: "https://rpc.mainnet.chain.robinhood.com",
+        changeOrigin: true,
+        rewrite: () => "/",
+      },
+    },
+  },
   build: {
     // Split heavy vendor libraries out of the main app chunk to improve first paint.
     rollupOptions: {
