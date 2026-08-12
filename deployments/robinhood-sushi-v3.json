@@ -1,0 +1,12 @@
+{
+  "chainId": "4663",
+  "network": "robinhoodMainnet",
+  "dex": "SushiSwap V3",
+  "note": "Verified on-chain 2026-08-12 via factory()/WETH9()/symbol() calls.",
+  "nonfungiblePositionManager": "0x51d0e5188afe12d502e29d982d20c190e7816107",
+  "v3Factory": "0xe51960f1b45f1c9fb6d166e6a884f866fc70433b",
+  "weth9": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+  "routeProcessor": "0x8e6fd69a77e88ee20ba4b4fbd59dfcda3ec0e98a",
+  "defaultFeeTier": 3000,
+  "defaultTickSpacing": 60
+}
