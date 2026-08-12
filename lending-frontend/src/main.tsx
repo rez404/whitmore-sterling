@@ -416,6 +416,32 @@ function App() {
     });
   }
 
+  // Native on-site swap via Sushi's routing API on Robinhood Chain: the API returns the
+  // optimal route + encoded router tx; we approve (for ERC-20 inputs) and sign it in-wallet.
+  async function sushiSwap(tokenIn: string, tokenOut: string, amountWei: bigint, isNative: boolean, label: string) {
+    return run("Swapping", async () => {
+      const { signer, addr } = await ensureWalletReady();
+      const url = `https://api.sushi.com/swap/v7/${Number(CHAIN.id)}?tokenIn=${tokenIn}&tokenOut=${tokenOut}&amount=${amountWei.toString()}&maxSlippage=0.01&sender=${addr}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Sushi routing is unavailable right now. Try again shortly.");
+      const quote = await res.json();
+      if (quote.status !== "Success" || !quote.tx) throw new Error("Sushi found no route for this pair or amount.");
+      const router: string = quote.tx.to;
+      if (!isNative) {
+        const allowance = BigInt(await new Contract(tokenIn, ERC20_ABI, provider).allowance(addr, router));
+        if (allowance < amountWei) { setPending("Approving swap (one-time)"); const at = await new Contract(tokenIn, ERC20_ABI, signer).approve(router, MaxUint256); await at.wait(); }
+      }
+      setPending("Confirm swap in wallet");
+      const tx = await signer.sendTransaction({ to: router, data: quote.tx.data, value: quote.tx.value ? BigInt(quote.tx.value) : 0n });
+      setTxHash(tx.hash);
+      await tx.wait();
+      const outDec = quote.tokens?.[quote.tokenTo]?.decimals ?? 18;
+      const outSym = quote.tokens?.[quote.tokenTo]?.symbol ?? "tokens";
+      const out = quote.assumedAmountOut ? Number(formatUnits(BigInt(quote.assumedAmountOut), outDec)).toLocaleString(undefined, { maximumFractionDigits: 6 }) : "";
+      return `Swapped ${label} for ~${out} ${outSym}.`;
+    });
+  }
+
   const health = accountState?.healthFactor === undefined || accountState.healthFactor > 10n ** 30n ? "∞" : Number(formatUnits(accountState.healthFactor, 18)).toFixed(2);
   const price = oracle ? Number(oracle.price) / 10 ** Number(oracle.decimals) : undefined;
   const utilization = pool && pool.totalSuppliedLiquidity > 0n ? Number(pool.totalDebt * 10000n / pool.totalSuppliedLiquidity) / 100 : 0;
@@ -487,7 +513,7 @@ function App() {
         connect={() => run("Connecting wallet", async () => { await connect(); return "Wallet connected."; })}
       />}
 
-      {tab === "swap" && <SwapPanel market={market} prices={prices} amount={swapAmount} setAmount={setSwapAmount} connect={() => run("Connecting wallet", async () => { await connect(); return "Wallet connected."; })} account={account} />}
+      {tab === "swap" && <SwapPanel market={market} prices={prices} amount={swapAmount} setAmount={setSwapAmount} connect={() => run("Connecting wallet", async () => { await connect(); return "Wallet connected."; })} account={account} debtDecimals={debtDecimals} pending={pending} sushiSwap={sushiSwap} />}
 
       {tab === "lending" && <section className="panel lp-panel">
         <div className="panel-head"><span>Liquidity Desk</span><b>USDG supply · {pool ? pct(pool.borrowAprBps) + " borrow APR" : "APR loading"}</b></div>
@@ -680,31 +706,75 @@ function DashboardView({ account, accountState, pool, market, prices, health, de
 function DashboardSection({ title, children }: { title: string; children: React.ReactNode }) { return <section className="dash-section"><h3>{title}</h3>{children}</section>; }
 function EmptyBox({ title, text, action, onClick }: { title: string; text: string; action?: string; onClick?: () => void }) { return <div className="dash-empty"><b>{title}</b><span>{text}</span>{action && <button type="button" onClick={onClick}>{action}</button>}</div>; }
 
-function SwapPanel({ market, prices, amount, setAmount, connect, account }: { market: MarketConfig; prices: PriceMap; amount: string; setAmount: (v: string) => void; connect: () => void; account: string }) {
-  const price = prices[market.symbol]?.price;
-  const uniUrl = `https://app.uniswap.org/swap?chain=robinhood&inputCurrency=ETH&outputCurrency=${market.token}&exactField=input&exactAmount=${encodeURIComponent(amount || "0")}`;
-  const swapIn = async () => {
-    if (!account) await connect();
-    window.open(uniUrl, "_blank", "noopener,noreferrer");
+function SwapPanel({ market, prices, amount, setAmount, connect, account, debtDecimals, pending, sushiSwap }: { market: MarketConfig; prices: PriceMap; amount: string; setAmount: (v: string) => void; connect: () => void; account: string; debtDecimals: number; pending: string; sushiSwap: (tokenIn: string, tokenOut: string, amountWei: bigint, isNative: boolean, label: string) => Promise<void> }) {
+  const NATIVE = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
+  const inputs = [
+    { key: "ETH", label: "ETH", address: NATIVE, decimals: 18, native: true },
+    { key: "USDG", label: "USDG", address: USDG_ADDRESS, decimals: debtDecimals, native: false },
+  ];
+  const [inKey, setInKey] = React.useState("ETH");
+  const [outSymbol, setOutSymbol] = React.useState(market.symbol);
+  const input = inputs.find((i) => i.key === inKey) || inputs[0];
+  const outMarket = MARKETS.find((m) => m.symbol === outSymbol) || market;
+  const [quote, setQuote] = React.useState<any>(null);
+  const [quoting, setQuoting] = React.useState(false);
+  const [quoteErr, setQuoteErr] = React.useState("");
+
+  React.useEffect(() => {
+    const raw = (amount || "").trim();
+    if (!raw || Number(raw) <= 0) { setQuote(null); setQuoteErr(""); setQuoting(false); return; }
+    let cancelled = false;
+    setQuoting(true); setQuoteErr("");
+    const timer = window.setTimeout(async () => {
+      try {
+        const amountWei = parseUnits(raw, input.decimals);
+        const sender = account || "0x0000000000000000000000000000000000000001";
+        const url = `https://api.sushi.com/swap/v7/4663?tokenIn=${input.address}&tokenOut=${outMarket.token}&amount=${amountWei.toString()}&maxSlippage=0.01&sender=${sender}`;
+        const res = await fetch(url);
+        const q = res.ok ? await res.json() : null;
+        if (cancelled) return;
+        if (q && q.status === "Success") setQuote(q);
+        else { setQuote(null); setQuoteErr("No route for this amount yet."); }
+      } catch { if (!cancelled) { setQuote(null); setQuoteErr("Quote unavailable. Try again."); } }
+      finally { if (!cancelled) setQuoting(false); }
+    }, 450);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [amount, inKey, outSymbol, account, input.address, input.decimals, outMarket.token]);
+
+  const outDec = quote?.tokens?.[quote.tokenTo]?.decimals ?? 18;
+  const outAmount = quote?.assumedAmountOut ? Number(formatUnits(BigInt(quote.assumedAmountOut), outDec)).toLocaleString(undefined, { maximumFractionDigits: 6 }) : "";
+  const priceImpact = quote?.priceImpact != null ? (Number(quote.priceImpact) * 100).toFixed(2) + "%" : "—";
+
+  const doSwap = async () => {
+    if (!account) { await connect(); return; }
+    const raw = (amount || "").trim();
+    if (!raw || Number(raw) <= 0) return;
+    await sushiSwap(input.address, outMarket.token, parseUnits(raw, input.decimals), input.native, `${raw} ${input.label}`);
   };
+
   return <section className="panel swap-panel">
-    <div className="panel-head"><span>Swap In</span><b>ETH → {market.symbol}</b></div>
+    <div className="panel-head"><span>Swap</span><b>{input.label} → {outMarket.symbol} · via Sushi</b></div>
     <div className="swap-card">
-      <div className="swap-row"><span>From</span><label><input value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))} inputMode="decimal" aria-label="ETH amount to swap in" /><b>ETH</b></label></div>
-      <button className="swap-flip" type="button" aria-label="Swap direction">→</button>
-      <div className="swap-row"><span>To</span><label><input value={market.symbol} readOnly aria-label={`Selected ${market.symbol} output`} /><b>{market.symbol}</b></label></div>
+      <div className="swap-row"><span>You pay</span><label>
+        <input value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))} inputMode="decimal" placeholder="0.0" aria-label="Amount to swap" />
+        <select className="swap-select" value={inKey} onChange={(e) => setInKey(e.target.value)} aria-label="Input token">{inputs.map((i) => <option key={i.key} value={i.key}>{i.label}</option>)}</select>
+      </label></div>
+      <div className="swap-flip" aria-hidden="true">↓</div>
+      <div className="swap-row"><span>You receive (est.)</span><label>
+        <input value={quoting ? "…" : outAmount} readOnly placeholder="0.0" aria-label="Estimated output amount" />
+        <select className="swap-select" value={outSymbol} onChange={(e) => setOutSymbol(e.target.value)} aria-label="Output token">{MARKETS.map((m) => <option key={m.symbol} value={m.symbol}>{m.symbol}</option>)}</select>
+      </label></div>
       <dl className="stats-grid swap-stats">
-        <Stat label="Current stock viewed" value={market.symbol} />
-        <Stat label="Oracle price" value={priceFmt(price)} />
-        <Stat label="Token address" value={short(market.token)} />
-        <Stat label="Route" value="ETH input prefilled" tone="good" />
+        <Stat label="Rate" value={quote && Number(amount) > 0 && outAmount ? `1 ${input.label} ≈ ${(Number(outAmount) / Number(amount)).toLocaleString(undefined, { maximumFractionDigits: 4 })} ${outMarket.symbol}` : "—"} />
+        <Stat label="Price impact" value={priceImpact} tone={quote && Number(quote.priceImpact) > 0.05 ? "warn" : "good"} />
+        <Stat label="Oracle price" value={priceFmt(prices[outMarket.symbol]?.price)} />
+        <Stat label="Router" value={quote?.tx?.to ? short(quote.tx.to) : "Sushi RouteProcessor"} />
       </dl>
-      <p className="swap-note">Swap In opens a prefilled ETH → {market.symbol} route for the stock token you are currently viewing. Whitmore Sterling does not fake quotes or auto-sign transactions: the wallet/Uniswap route still shows the executable quote and asks for confirmation before ETH leaves the wallet.</p>
+      {quoteErr && <p className="swap-note warn">{quoteErr}</p>}
+      <p className="swap-note">Quotes and routing come live from Sushi on Robinhood Chain, and the swap executes on-site: your wallet approves (for ERC-20 inputs) and signs the Sushi router transaction — nothing is auto-signed.</p>
       <div className="swap-actions">
-        <button className="primary swap-in-button" type="button" onClick={swapIn}>Swap In</button>
-        <button type="button" onClick={connect}>{account ? short(account) : "Connect wallet"}</button>
-        <a className="terminal-link" href={uniUrl} target="_blank" rel="noreferrer">Open route ↗</a>
-        <button type="button" onClick={() => navigator.clipboard?.writeText(market.token)}>Copy token</button>
+        <button className="primary swap-in-button" type="button" onClick={doSwap} disabled={!!pending || (!!account && !quote)}>{!account ? "Connect wallet" : pending ? "Working…" : quoting ? "Fetching quote…" : "Swap"}</button>
+        <button type="button" onClick={() => navigator.clipboard?.writeText(outMarket.token)}>Copy {outMarket.symbol} address</button>
       </div>
     </div>
   </section>;

@@ -87,6 +87,8 @@ input::placeholder { color: #8d8985; }
 @media (prefers-reduced-motion: reduce) {
   .ticker-tape > div { animation: none !important; }
 }
+.swap-select { flex: 0 0 auto; background: rgba(213,180,108,.08); border: 1px solid rgba(213,180,108,.32); border-radius: 8px; color: #dcbd7c; font-weight: 800; padding: 7px 9px; font-size: .82rem; cursor: pointer; }
+.swap-note.warn { color: #e0a34b; }
 .ghost { border-color: transparent; background: #0e0e0d; color: #e5e5e7; border-radius: 999px; font-weight: 800; }
 .primary { border-color: var(--accent); background: var(--accent); color: #050505; border-radius: 999px; font-weight: 900; box-shadow: 0 0 24px rgba(155,143,122,.18); }
 .terminal-link { border: 1px solid var(--line); border-radius: 999px; padding: .62rem .95rem; color: #eef7ff; background: rgba(111,120,128,.14); }
