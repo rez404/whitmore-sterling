@@ -519,9 +519,9 @@ function App() {
   return <div className="app-frame">
     <aside className="side-rail" aria-label="Primary navigation">
       <a className="brand-mark brand-lockup" href="#top" aria-label="Whitmore Sterling — Home">
-        <img className="brand-crest" src="/whitmore-sterling-logo.png" alt="Whitmore Sterling crest" />
+        <img className="brand-crest" src="/wolf.svg" alt="Whitmore Sterling wolf emblem" />
         <span className="brand-word">Whitmore Sterling</span>
-        <span className="brand-sub">Equity Credit Desk</span>
+        <span className="brand-sub">Texas</span>
       </a>
       <nav className="rail-nav">
         <p>Explore</p>
@@ -753,7 +753,7 @@ function DashboardView({ account, accountState, pool, market, prices, health, de
       <div className="dashboard-chart" aria-label="Balance chart">
         <div className="chart-range"><button>1D</button><button className="active">1W</button><button>1M</button><button>6M</button><button>1Y</button><button>All</button></div>
         <svg viewBox="0 0 760 230" role="img" aria-label="Balance over time">
-          <defs><linearGradient id="dashGlow" x1="0" x2="1"><stop offset="0" stopColor="#9b8f7a"/><stop offset=".55" stopColor="#6f7880"/><stop offset="1" stopColor="#a64b4b"/></linearGradient></defs>
+          <defs><linearGradient id="dashGlow" x1="0" x2="1"><stop offset="0" stopColor="#ccff00"/><stop offset=".55" stopColor="#8a8a8a"/><stop offset="1" stopColor="#ff5a5f"/></linearGradient></defs>
           <path d="M0 178 H760" stroke="rgba(185,185,187,.18)" />
           <path d="M0 150 C130 150 180 120 270 132 S430 180 540 96 S680 84 760 64" fill="none" stroke="url(#dashGlow)" strokeWidth="3" opacity={balance > 0 ? 1 : .35}/>
           <path d="M0 151 C130 151 180 121 270 133 S430 181 540 97 S680 85 760 65 V230 H0 Z" fill="rgba(200,255,0,.05)" opacity={balance > 0 ? 1 : .25}/>

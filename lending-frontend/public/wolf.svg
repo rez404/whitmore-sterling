@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Whitmore Sterling wolf emblem">
+  <rect width="100" height="100" rx="22" fill="#0b0b0b"/>
+  <g fill="#f6f7f5">
+    <path d="M24 16 L43 37 L29 44 Z"/>
+    <path d="M76 16 L57 37 L71 44 Z"/>
+    <path d="M30 37 L50 30 L70 37 L77 54 L61 62 L50 84 L39 62 L23 54 Z"/>
+  </g>
+  <path d="M38 47 L46 51 L38 54 Z" fill="#CCFF00"/>
+  <path d="M62 47 L54 51 L62 54 Z" fill="#CCFF00"/>
+</svg>
