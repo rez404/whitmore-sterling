@@ -1,4 +1,5 @@
-import { formatUnits } from "ethers";
+import * as React from "react";
+import { Contract, formatUnits } from "ethers";
 import { ArrowUpRight } from "lucide-react";
 import { Button } from "@/src/components/ui/button";
 import { EmptyState, Skeleton } from "@/src/components/ui/misc";
@@ -7,7 +8,9 @@ import { DataTable, Figure, FigureRow, Num, Section, Td, Th } from "@/src/compon
 import { TokenIcon } from "@/src/components/ui/token";
 import { PageHeader } from "@/src/components/shell";
 import type { AccountState, DeskTab, PoolState, PriceMap } from "@/src/lib/chain";
-import { amt, hfTone, num, pct, priceFmt, short, usd } from "@/src/lib/format";
+import { VAULT_ABI, provider } from "@/src/lib/chain";
+import { amt, amtSig, hfTone, num, pct, priceFmt, short, usd } from "@/src/lib/format";
+import { LP_VAULTS } from "@/src/farms";
 import type { MarketConfig } from "@/src/markets";
 
 export type Position = { symbol: string; token: string; amount: bigint; price?: number };
@@ -206,6 +209,8 @@ export function DashboardPage({
         </>
       )}
 
+      {account && <FarmPositions account={account} prices={prices} debtDecimals={debtDecimals} go={go} />}
+
       <Section
         title="Protocol"
         meta="Live pool state"
@@ -223,6 +228,104 @@ export function DashboardPage({
         </FigureRow>
       </Section>
     </div>
+  );
+}
+
+/**
+ * Farm positions on the overview.
+ *
+ * Someone who has deposited into a vault expects to see it here, not only on the
+ * Farms page. The value is not estimated from share supply: each vault is asked
+ * what the caller's shares would actually pay out right now, and the two token
+ * amounts are marked at the oracle price.
+ */
+function FarmPositions({
+  account,
+  prices,
+  debtDecimals,
+  go,
+}: {
+  account: string;
+  prices: PriceMap;
+  debtDecimals: number;
+  go: (tab: DeskTab) => void;
+}) {
+  type Row = { symbol: string; shares: bigint; stock: bigint; usdg: bigint };
+  const [rows, setRows] = React.useState<Row[]>([]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      const live = LP_VAULTS.filter((v) => v.vault);
+      const out: Row[] = [];
+      await Promise.all(
+        live.map(async (v) => {
+          try {
+            const c = new Contract(v.vault, VAULT_ABI, provider);
+            const shares = BigInt(await c.balanceOf(account));
+            if (shares === 0n) return;
+            const stockIsToken0 = v.token0.toLowerCase() === v.stock.toLowerCase();
+            let stock = 0n;
+            let usdg = 0n;
+            try {
+              const res = await c.withdraw.staticCall(shares, 0, 0, { from: account });
+              stock = BigInt(stockIsToken0 ? res[0] : res[1]);
+              usdg = BigInt(stockIsToken0 ? res[1] : res[0]);
+            } catch {
+              /* the position is there even if the preview call fails */
+            }
+            out.push({ symbol: v.symbol, shares, stock, usdg });
+          } catch {
+            /* skip this vault */
+          }
+        }),
+      );
+      if (!cancelled) setRows(out.sort((a, b) => a.symbol.localeCompare(b.symbol)));
+    };
+    load();
+    const id = window.setInterval(load, 60000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [account]);
+
+  if (rows.length === 0) return null;
+
+  const valueOf = (r: Row) =>
+    Number(formatUnits(r.stock, 18)) * (prices[r.symbol]?.price ?? 0) + Number(formatUnits(r.usdg, debtDecimals));
+  const total = rows.reduce((s, r) => s + valueOf(r), 0);
+
+  return (
+    <Section
+      title="Farm positions"
+      meta={`${rows.length} vault${rows.length > 1 ? "s" : ""} · ${total > 0 ? "" : "value pending"}`}
+      action={
+        <Button size="sm" variant="ghost" onClick={() => go("farms")}>
+          Manage
+        </Button>
+      }
+    >
+      <ul className="divide-y divide-[var(--color-line)]">
+        {rows.map((r) => (
+          <li key={r.symbol} className="flex items-center gap-3 py-3">
+            <TokenIcon symbol={r.symbol} size="lg" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-semibold text-ink">{r.symbol} / USDG</p>
+              <p className="truncate text-[13.5px] tabular-nums text-ink-3">
+                {amtSig(r.stock)} {r.symbol} + {amt(r.usdg, 2, debtDecimals)} USDG
+              </p>
+            </div>
+            <div className="shrink-0 text-right">
+              <p className="text-[16px] font-medium tabular-nums text-ink">
+                {valueOf(r) > 0 ? <Money value={valueOf(r)} /> : <span className="text-ink-4">—</span>}
+              </p>
+              <p className="text-[12.5px] tabular-nums text-ink-4">{amtSig(r.shares)} shares</p>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </Section>
   );
 }
 

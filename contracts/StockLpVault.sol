@@ -170,16 +170,33 @@ contract StockLpVault is ERC20, Ownable, ReentrancyGuard, Pausable {
         if (f0 > 0) IERC20(token0).safeTransfer(feeRecipient, f0);
         if (f1 > 0) IERC20(token1).safeTransfer(feeRecipient, f1);
 
-        uint256 add0 = c0 - f0;
-        uint256 add1 = c1 - f1;
+        // Reinvest everything the vault is holding, not only what this call
+        // collected. A skipped one-sided compound leaves a balance behind, and it
+        // should go back to work the moment the other side shows up. Both callers
+        // run this before moving any user funds, so nothing here is anyone else's.
+        uint256 add0 = IERC20(token0).balanceOf(address(this));
+        uint256 add1 = IERC20(token1).balanceOf(address(this));
         uint256 r0; uint256 r1;
-        if (add0 > 0 || add1 > 0) {
-            (, r0, r1) = npm.increaseLiquidity(INonfungiblePositionManager.IncreaseLiquidityParams({
+        // BOTH sides are required, not either. An in-range position takes both
+        // tokens, so a one-sided amount computes zero liquidity and Uniswap's
+        // `mint` reverts on it — which would take the whole deposit or withdrawal
+        // down with it. Fees arrive one side at a time constantly (a run of buys
+        // pays only token1), so this is the normal case, not an edge case.
+        if (add0 > 0 && add1 > 0) {
+            // Even with both sides funded the amounts can still round to zero
+            // liquidity at an extreme price. Reinvesting is an optimisation, never
+            // a reason to block someone's withdrawal.
+            try npm.increaseLiquidity(INonfungiblePositionManager.IncreaseLiquidityParams({
                 tokenId: positionId, amount0Desired: add0, amount1Desired: add1,
                 amount0Min: 0, amount1Min: 0, deadline: block.timestamp
-            }));
-            // Any un-reinvested remainder (ratio dust) stays in the vault and is folded into the next compound.
+            })) returns (uint128, uint256 a0, uint256 a1) {
+                r0 = a0; r1 = a1;
+            } catch {
+                // Leave the fees in the vault; the next compound folds them in.
+            }
         }
+        // Any un-reinvested remainder (ratio dust, or a skipped one-sided collect)
+        // stays in the vault and is folded into the next compound.
         emit Compounded(f0, f1, r0, r1);
     }
 

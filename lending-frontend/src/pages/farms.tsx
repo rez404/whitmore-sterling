@@ -11,7 +11,7 @@ import { PageHeader } from "@/src/components/shell";
 import { cn } from "@/src/lib/utils";
 import { ERC20_ABI, MULTI_STAKING_ABI, V3_POOL_ABI, VAULT_ABI, provider, type PriceMap } from "@/src/lib/chain";
 import { GAS_BUFFER_WEI } from "@/src/lib/uniswap";
-import { amt, priceFmt, short } from "@/src/lib/format";
+import { amt, amtSig, priceFmt, short } from "@/src/lib/format";
 import { fetchPairStatsBatch, fetchUsdPrices, feeApr, usdValue, type PairStats } from "@/src/lib/prices";
 import { LP_VAULTS, LP_ZAP, PLATFORM_TOKEN, STAKING_VAULT, UNISWAP_V3, type VaultPool } from "@/src/farms";
 import { USDG_ADDRESS } from "@/src/markets";
@@ -171,7 +171,7 @@ export function FarmsPage({
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-semibold text-ink">{pool.symbol} / USDG</span>
                     <span className="block truncate text-[13.5px] tabular-nums text-ink-3">
-                      {amt(myShares[pool.symbol] ?? 0n, 4)} shares
+                      {amtSig(myShares[pool.symbol] ?? 0n)} shares
                     </span>
                   </span>
                   {apr != null && (
@@ -209,7 +209,7 @@ export function FarmsPage({
                     </span>
                   </Td>
                   <Td align="right">
-                    <Num>{amt(myShares[pool.symbol] ?? 0n, 4)}</Num>
+                    <Num>{amtSig(myShares[pool.symbol] ?? 0n)}</Num>
                   </Td>
                   <Td align="right">
                     {apr != null ? <Num className="text-up">{apr.toFixed(1)}%</Num> : "—"}
@@ -963,7 +963,7 @@ function VaultPosition({
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-x-10 gap-y-5 sm:grid-cols-3">
-        <Figure label="Your shares" value={amt(shares, 4)} />
+        <Figure label="Your shares" value={amtSig(shares)} />
         <Figure label="Share of vault" value={`${share.toFixed(4)}%`} />
         <Figure
           label="Withdrawable now"

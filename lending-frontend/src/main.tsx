@@ -728,16 +728,20 @@ function App() {
 
   async function vaultWithdraw(vaultPool: VaultPool, shares: bigint) {
     return run("Withdrawing", async () => {
-      const { signer } = await ensureWalletReady();
+      const { signer, addr } = await ensureWalletReady();
       const v = new Contract(vaultPool.vault, VAULT_ABI, signer);
-      // The withdrawal removes a proportional slice, so the floor is derived from the
-      // position rather than from a quote — but it must not be zero either.
-      const totalSupply = BigInt(await new Contract(vaultPool.vault, VAULT_ABI, provider).totalSupply());
-      const liquidity = BigInt(await new Contract(vaultPool.vault, VAULT_ABI, provider).positionLiquidity());
-      const share = totalSupply > 0n ? (liquidity * shares) / totalSupply : 0n;
-      const floor = (share * 99n) / 100n; // 1% tolerance on each side
-      await v.withdraw.staticCall(shares, floor, floor);
-      const tx = await v.withdraw(shares, floor, floor);
+      // The floors are TOKEN amounts, one per side — not liquidity. Deriving them
+      // from `positionLiquidity` mixed the two up and fed a raw liquidity number in
+      // as a 6-decimal USDG minimum, which reverted every withdrawal with
+      // "Price slippage check". Ask the contract what this many shares pays out and
+      // take a tolerance off each side.
+      const [exp0, exp1] = await v.withdraw.staticCall(shares, 0, 0, { from: addr });
+      // 5%, not 1%: a full-range position's split between the two tokens moves with
+      // the price, so a tight floor fails on ordinary drift rather than on an attack.
+      const min0 = (BigInt(exp0) * 95n) / 100n;
+      const min1 = (BigInt(exp1) * 95n) / 100n;
+      await v.withdraw.staticCall(shares, min0, min1, { from: addr });
+      const tx = await v.withdraw(shares, min0, min1);
       setTxHash(tx.hash);
       await tx.wait();
       return "Withdrew liquidity from the vault.";

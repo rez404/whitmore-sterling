@@ -15,8 +15,8 @@ const EXTENSIONS = ["svg", "png"] as const;
 
 // The platform token has no listing to pull a logo from — it wears the house mark.
 const OVERRIDES: Record<string, string> = {
-  STERLING: "/whitmore-mark.svg",
-  WHIT: "/whitmore-mark.svg",
+  STERLING: "/wolf.svg",
+  WHIT: "/wolf.svg",
 };
 
 export function TokenIcon({

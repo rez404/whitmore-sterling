@@ -82,6 +82,11 @@ contract MockNonfungiblePositionManager {
     {
         require(!failNext, "mint failed");
         uint256 used = p.amount0Desired < p.amount1Desired ? p.amount0Desired : p.amount1Desired;
+        // Uniswap's pool.mint reverts on zero liquidity. The mock used to accept it
+        // and return 0, which hid a lock-up: compounding a one-sided fee balance
+        // reverted on the real chain and took the whole deposit or withdrawal with
+        // it. A mock that is kinder than the chain is a mock that lies.
+        require(used > 0, "zero liquidity");
         require(used >= p.amount0Min && used >= p.amount1Min, "Price slippage check");
 
         tokenId = nextId++;
@@ -114,6 +119,11 @@ contract MockNonfungiblePositionManager {
         require(position.token0 != address(0), "no position");
 
         uint256 used = p.amount0Desired < p.amount1Desired ? p.amount0Desired : p.amount1Desired;
+        // Uniswap's pool.mint reverts on zero liquidity. The mock used to accept it
+        // and return 0, which hid a lock-up: compounding a one-sided fee balance
+        // reverted on the real chain and took the whole deposit or withdrawal with
+        // it. A mock that is kinder than the chain is a mock that lies.
+        require(used > 0, "zero liquidity");
         require(used >= p.amount0Min && used >= p.amount1Min, "Price slippage check");
 
         position.liquidity += uint128(used);

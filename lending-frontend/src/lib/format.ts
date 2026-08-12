@@ -28,6 +28,21 @@ export const compactNum = (v: number, currency = true) =>
     ...(currency ? { style: "currency" as const, currency: "USD" } : {}),
   }).format(v);
 
+/**
+ * An amount that never renders a non-zero balance as "0".
+ *
+ * Vault shares are Uniswap liquidity units carried on an 18-decimal ERC-20, so a
+ * real position reads as 0.000000235. Fixed decimal places round that to "0" and
+ * tell a depositor their money is gone. Significant digits keep the figure honest
+ * at any magnitude.
+ */
+export const amtSig = (v?: bigint | null, decimals = 18, sig = 4) => {
+  if (v == null) return "—";
+  const n = Number(formatUnits(v, decimals));
+  if (n === 0) return "0";
+  return n.toLocaleString(undefined, n >= 1 ? { maximumFractionDigits: sig } : { maximumSignificantDigits: sig });
+};
+
 /** A chain amount as a plain number, for components that do their own formatting. */
 export const num = (v?: bigint | null, decimals = 18) => (v == null ? null : Number(formatUnits(v, decimals)));
 

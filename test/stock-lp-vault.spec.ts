@@ -132,6 +132,42 @@ describe("StockLpVault (full-range Uniswap V3 vault)", function () {
     expect(await npm.nextId()).to.equal(2n); // no second position was minted
   });
 
+  // Found on mainnet, not here: the SPCX vault collected 3 wei of USDG in fees and
+  // nothing on the other side, so `_compound` asked Uniswap to add one-sided
+  // liquidity. `pool.mint` reverts on zero liquidity, and because compounding runs
+  // first in both entry points, every deposit and every withdrawal on that vault
+  // reverted. Fees arrive one side at a time all the time — a run of buys pays only
+  // the quote token — so this locks a live vault holding real money.
+  it("survives fees that land on only one side of the pair", async function () {
+    const { alice, bob, vault, npm, feeRecipient, token0, token1 } = await fixture();
+    await vault.connect(alice).deposit(e18("100"), e18("100"), 0, 0);
+    const liquidityBefore = await vault.positionLiquidity();
+
+    await npm.accrueFees(1, 0, 3n); // dust, one side only
+
+    await expect(vault.compound()).to.not.be.reverted;
+    // The dust waits in the vault for a compound that has both sides, instead of
+    // blocking anyone: the position is untouched and both entry points still work.
+    expect(await vault.positionLiquidity()).to.equal(liquidityBefore);
+    expect(await token1.balanceOf(await vault.getAddress())).to.be.gt(0);
+
+    await expect(vault.connect(bob).deposit(e18("50"), e18("50"), 0, 0)).to.not.be.reverted;
+    await expect(vault.connect(alice).withdraw(await vault.balanceOf(alice.address), 0, 0)).to.not.be.reverted;
+    expect(await token0.balanceOf(alice.address)).to.be.gt(0);
+  });
+
+  it("reinvests again as soon as both sides have fees", async function () {
+    const { alice, vault, npm } = await fixture();
+    await vault.connect(alice).deposit(e18("100"), e18("100"), 0, 0);
+    await npm.accrueFees(1, 0, e18("5")); // one-sided: skipped
+    await vault.compound();
+    const stalled = await vault.positionLiquidity();
+
+    await npm.accrueFees(1, e18("5"), 0); // now the other side arrives
+    await vault.compound();
+    expect(await vault.positionLiquidity()).to.be.gt(stalled);
+  });
+
   it("lets anyone compound — the keeper needs no privileges", async function () {
     const { alice, bob, vault, npm } = await fixture();
     await vault.connect(alice).deposit(e18("100"), e18("100"), 0, 0);
