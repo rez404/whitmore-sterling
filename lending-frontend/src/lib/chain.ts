@@ -73,6 +73,12 @@ export const VAULT_ABI = [
   "function totalSupply() view returns (uint256)",
   "function positionLiquidity() view returns (uint128)",
   "function performanceFeeBps() view returns (uint256)",
+  // Cost basis comes from these. A zap deposits on the caller's behalf, so the
+  // `user` on Deposited is the zap contract — the share Transfer is what ties a
+  // deposit to a person.
+  "event Deposited(address indexed user, uint256 shares, uint256 amount0, uint256 amount1)",
+  "event Withdrawn(address indexed user, uint256 shares, uint256 amount0, uint256 amount1)",
+  "event Transfer(address indexed from, address indexed to, uint256 value)",
 ];
 
 export const ZAP_ABI = [

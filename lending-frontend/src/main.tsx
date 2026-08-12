@@ -55,6 +55,9 @@ declare global {
 
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
+/** Set when the user disconnects, so a reload does not silently reconnect. */
+const DISCONNECTED_KEY = "ws:wallet-disconnected";
+
 
 async function readWithRetry<T>(fn: () => Promise<T>, attempts = 4): Promise<T> {
   let last: any;
@@ -401,10 +404,14 @@ function App() {
   }, [loadTickerPrices]);
 
   React.useEffect(() => {
-    window.ethereum
-      ?.request({ method: "eth_accounts" })
-      .then((a: string[]) => setAccount(a?.[0] || ""))
-      .catch(() => undefined);
+    // An injected wallet stays authorised after a disconnect, so without this flag
+    // the next reload silently reconnects and the button never appears to work.
+    if (localStorage.getItem(DISCONNECTED_KEY) !== "1") {
+      window.ethereum
+        ?.request({ method: "eth_accounts" })
+        .then((a: string[]) => setAccount(a?.[0] || ""))
+        .catch(() => undefined);
+    }
     window.ethereum
       ?.request({ method: "eth_chainId" })
       .then((cid: string) => setWalletChainId(typeof cid === "string" ? cid : ""))
@@ -800,12 +807,38 @@ function App() {
     try {
       setPending("Connecting wallet");
       setError("");
+      localStorage.removeItem(DISCONNECTED_KEY);
       await connect();
     } catch (e) {
       setError(cleanError(e));
     } finally {
       setPending("");
     }
+  };
+
+  /**
+   * Disconnect.
+   *
+   * An injected wallet has no session to end — the page cannot make MetaMask
+   * forget it. So we do the two things that are actually in our control: ask the
+   * wallet to revoke the account permission if it supports that, and remember
+   * locally that this browser is disconnected so a reload does not walk straight
+   * back in. Everything derived from the address is cleared with it.
+   */
+  const disconnectAction = async () => {
+    try {
+      await window.ethereum?.request?.({
+        method: "wallet_revokePermissions",
+        params: [{ eth_accounts: {} }],
+      });
+    } catch {
+      // Wallet does not implement it — the local clear below is still honest.
+    }
+    localStorage.setItem(DISCONNECTED_KEY, "1");
+    setAccount("");
+    setAccountState(null);
+    setError("");
+    setSuccess("");
   };
 
   const positionsWithPrices: Position[] = positions.map((p) => ({ ...p, price: prices[p.symbol]?.price }));
@@ -820,6 +853,7 @@ function App() {
           filter={filter}
           setFilter={setFilter}
           onConnect={connectAction}
+          onDisconnect={disconnectAction}
           pending={pending}
           tab={tab}
           setTab={setTab}

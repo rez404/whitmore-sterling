@@ -2,8 +2,11 @@ import * as React from "react";
 import {
   ArrowLeftRight,
   BookOpen,
+  ChevronDown,
   Coins,
+  Copy,
   ExternalLink,
+  LogOut,
   FileText,
   GraduationCap,
   LayoutDashboard,
@@ -293,6 +296,7 @@ export function Topbar({
   filter,
   setFilter,
   onConnect,
+  onDisconnect,
   pending,
   tab,
   setTab,
@@ -301,6 +305,7 @@ export function Topbar({
   filter: string;
   setFilter: (v: string) => void;
   onConnect: () => void;
+  onDisconnect: () => void;
   pending: string;
   tab: DeskTab;
   setTab: (t: DeskTab) => void;
@@ -319,20 +324,99 @@ export function Topbar({
         />
       </label>
       <div className="ml-auto flex items-center gap-2">
-        <Button variant={account ? "outline" : "primary"} size="sm" onClick={onConnect} disabled={!!pending}>
-          <Wallet />
-          {account ? (
-            short(account)
-          ) : (
-            <>
-              {/* The hamburger costs width on a phone; the verb alone is enough. */}
-              <span className="sm:hidden">Connect</span>
-              <span className="hidden sm:inline">Connect wallet</span>
-            </>
-          )}
-        </Button>
+        {account ? (
+          <WalletMenu account={account} onDisconnect={onDisconnect} />
+        ) : (
+          <Button variant="primary" size="sm" onClick={onConnect} disabled={!!pending}>
+            <Wallet />
+            {/* The hamburger costs width on a phone; the verb alone is enough. */}
+            <span className="sm:hidden">Connect</span>
+            <span className="hidden sm:inline">Connect wallet</span>
+          </Button>
+        )}
       </div>
     </header>
+  );
+}
+
+/**
+ * The connected address, and what you can do with it.
+ *
+ * Clicking the address used to do nothing, which reads as a broken button. An
+ * injected wallet cannot really be signed out of from the page, so the menu is
+ * honest about what it offers: copy, inspect, and stop using it here.
+ */
+function WalletMenu({ account, onDisconnect }: { account: string; onDisconnect: () => void }) {
+  const [open, setOpen] = React.useState(false);
+  const [copied, setCopied] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const copy = () => {
+    navigator.clipboard?.writeText(account);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+  };
+
+  return (
+    <div className="relative" ref={ref}>
+      <Button variant="outline" size="sm" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <Wallet />
+        {short(account)}
+        <ChevronDown className={cn("size-3.5 text-ink-3 transition-transform", open && "rotate-180")} />
+      </Button>
+
+      {open && (
+        <div className="absolute right-0 z-50 mt-2 w-[240px] overflow-hidden rounded-lg border border-line-strong bg-surface-2 shadow-2xl shadow-black/60">
+          <div className="border-b border-line px-3.5 py-3">
+            <p className="text-[12px] tracking-wide text-ink-4 uppercase">Connected</p>
+            <p className="mt-1 truncate font-mono text-[13px] text-ink-2">{account}</p>
+          </div>
+          <button
+            type="button"
+            onClick={copy}
+            className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[14px] text-ink-2 transition-colors hover:bg-surface-3 hover:text-ink"
+          >
+            <Copy className="size-4 shrink-0 text-ink-3" />
+            {copied ? "Copied" : "Copy address"}
+          </button>
+          <a
+            href={explorer(account, "address")}
+            target="_blank"
+            rel="noreferrer"
+            onClick={() => setOpen(false)}
+            className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-[14px] text-ink-2 transition-colors hover:bg-surface-3 hover:text-ink"
+          >
+            <ExternalLink className="size-4 shrink-0 text-ink-3" />
+            View on explorer
+          </a>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onDisconnect();
+            }}
+            className="flex w-full items-center gap-2.5 border-t border-line px-3.5 py-2.5 text-left text-[14px] text-down transition-colors hover:bg-down/10"
+          >
+            <LogOut className="size-4 shrink-0" />
+            Disconnect
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

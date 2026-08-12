@@ -837,7 +837,15 @@ function FarmDetail({
 
       <Section title="Your position" meta={`${pool.symbol} / USDG vault`}>
         <div className="max-w-2xl">
-          <VaultPosition pool={pool} account={account} pending={pending} withdraw={withdraw} symbol={pool.symbol} />
+          <VaultPosition
+            pool={pool}
+            account={account}
+            pending={pending}
+            withdraw={withdraw}
+            symbol={pool.symbol}
+            mark={mark}
+            debtDecimals={debtDecimals}
+          />
         </div>
       </Section>
     </div>
@@ -889,18 +897,80 @@ function VaultPosition({
   pending,
   withdraw,
   symbol,
+  mark,
+  debtDecimals,
 }: {
   pool: VaultPool;
   account: string;
   pending: string;
   withdraw: (pool: VaultPool, shares: bigint) => Promise<void>;
   symbol: string;
+  /** DEX mark for the stock side, used only to value the position. */
+  mark: number | null;
+  debtDecimals: number;
 }) {
   const [shares, setShares] = React.useState(0n);
   const [totalSupply, setTotalSupply] = React.useState(0n);
   const [pct, setPct] = React.useState(100);
   const [preview, setPreview] = React.useState<{ amount0: bigint; amount1: bigint } | null>(null);
   const [stockIsToken0, setStockIsToken0] = React.useState(true);
+  const [basis, setBasis] = React.useState<{ amount0: bigint; amount1: bigint } | null>(null);
+
+  /**
+   * Cost basis: what this wallet actually put into the vault, net of what it has
+   * already taken out.
+   *
+   * It cannot be read from the `Deposited` event alone — a zap deposits on the
+   * caller's behalf, so the `user` field is the zap contract. The share transfer
+   * is what identifies the person, so we find every transfer in or out of this
+   * wallet and read the vault's own event from the same transaction.
+   */
+  React.useEffect(() => {
+    if (!account || !pool.vault) {
+      setBasis(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const c = new Contract(pool.vault, VAULT_ABI, provider);
+        const [inbound, outbound] = await Promise.all([
+          c.queryFilter(c.filters.Transfer(null, account)),
+          c.queryFilter(c.filters.Transfer(account, null)),
+        ]);
+        let a0 = 0n;
+        let a1 = 0n;
+        const seen = new Set<string>();
+        for (const ev of [...inbound, ...outbound]) {
+          if (seen.has(ev.transactionHash)) continue;
+          seen.add(ev.transactionHash);
+          const receipt = await provider.getTransactionReceipt(ev.transactionHash);
+          for (const log of receipt?.logs ?? []) {
+            if (log.address.toLowerCase() !== pool.vault.toLowerCase()) continue;
+            let parsed;
+            try {
+              parsed = c.interface.parseLog({ topics: [...log.topics], data: log.data });
+            } catch {
+              continue;
+            }
+            if (parsed?.name === "Deposited") {
+              a0 += BigInt(parsed.args[2]);
+              a1 += BigInt(parsed.args[3]);
+            } else if (parsed?.name === "Withdrawn") {
+              a0 -= BigInt(parsed.args[2]);
+              a1 -= BigInt(parsed.args[3]);
+            }
+          }
+        }
+        if (!cancelled) setBasis({ amount0: a0 > 0n ? a0 : 0n, amount1: a1 > 0n ? a1 : 0n });
+      } catch {
+        if (!cancelled) setBasis(null); // no log history available — hide PnL rather than guess
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pool.vault, account]);
 
   React.useEffect(() => {
     if (!account || !pool.vault) return;
@@ -960,8 +1030,71 @@ function VaultPosition({
   const stockOut = preview ? (stockIsToken0 ? preview.amount0 : preview.amount1) : null;
   const usdgOut = preview ? (stockIsToken0 ? preview.amount1 : preview.amount0) : null;
 
+  /**
+   * Live P&L, measured against holding.
+   *
+   * The whole position is previewed (not the selected slice), its two token
+   * amounts are compared with what went in, and the difference is marked at the
+   * current price. That is the number that answers "was providing liquidity worth
+   * it" — fees earned minus impermanent loss — rather than the price of the
+   * underlying moving, which the depositor would have been exposed to anyway.
+   */
+  const basisStock = basis ? (stockIsToken0 ? basis.amount0 : basis.amount1) : null;
+  const basisUsdg = basis ? (stockIsToken0 ? basis.amount1 : basis.amount0) : null;
+  const fullPreview = pct === 100 ? preview : null;
+  const curStock = fullPreview ? (stockIsToken0 ? fullPreview.amount0 : fullPreview.amount1) : null;
+  const curUsdg = fullPreview ? (stockIsToken0 ? fullPreview.amount1 : fullPreview.amount0) : null;
+
+  const valueNow =
+    curStock != null && curUsdg != null && mark != null
+      ? Number(formatUnits(curStock, 18)) * mark + Number(formatUnits(curUsdg, debtDecimals))
+      : null;
+  const valueIn =
+    basisStock != null && basisUsdg != null && mark != null
+      ? Number(formatUnits(basisStock, 18)) * mark + Number(formatUnits(basisUsdg, debtDecimals))
+      : null;
+  const pnl = valueNow != null && valueIn != null && valueIn > 0 ? valueNow - valueIn : null;
+  const pnlPct = pnl != null && valueIn ? (pnl / valueIn) * 100 : null;
+
   return (
     <div className="space-y-4">
+      {pnl != null && (
+        <div className="flex flex-wrap items-end justify-between gap-4 rounded-lg border border-line bg-surface-2 px-4 py-3.5">
+          <div>
+            <p className="text-[12.5px] font-medium tracking-[0.1em] text-ink-4 uppercase">P&amp;L vs holding</p>
+            <p
+              className={cn(
+                "mt-1.5 text-[28px] leading-none font-semibold tabular-nums",
+                pnl >= 0 ? "text-up" : "text-down",
+              )}
+            >
+              {pnl >= 0 ? "+" : "−"}
+              <Money value={Math.abs(pnl)} />
+              {pnlPct != null && (
+                <span className="ml-2 text-[16px] font-medium">
+                  {pnl >= 0 ? "+" : "−"}
+                  {Math.abs(pnlPct).toFixed(2)}%
+                </span>
+              )}
+            </p>
+          </div>
+          <dl className="flex gap-8 text-[13.5px]">
+            <div>
+              <dt className="text-ink-4">Value now</dt>
+              <dd className="mt-0.5 tabular-nums text-ink">
+                <Money value={valueNow} />
+              </dd>
+            </div>
+            <div>
+              <dt className="text-ink-4">Deposited</dt>
+              <dd className="mt-0.5 tabular-nums text-ink-2">
+                <Money value={valueIn} />
+              </dd>
+            </div>
+          </dl>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-x-10 gap-y-5 sm:grid-cols-3">
         <Figure label="Your shares" value={amtSig(shares)} />
         <Figure label="Share of vault" value={`${share.toFixed(4)}%`} />

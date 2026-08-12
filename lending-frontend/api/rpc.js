@@ -1,4 +1,7 @@
-const RPC_URL = process.env.ROBINHOOD_MAINNET_RPC || 'https://rpc.mainnet.chain.robinhood.com';
+// A private endpoint goes here. The public RPC throttles `eth_getLogs`, and the
+// farm P&L needs log history to work out what a wallet actually deposited.
+const RPC_URL =
+  process.env.RPC_URL || process.env.ROBINHOOD_MAINNET_RPC || 'https://rpc.mainnet.chain.robinhood.com';
 
 // Read-only JSON-RPC methods the app actually needs. Anything else is rejected so
 // this endpoint cannot be abused as a general-purpose (or write-capable) RPC relay.
