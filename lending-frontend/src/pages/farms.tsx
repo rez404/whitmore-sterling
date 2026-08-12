@@ -1320,7 +1320,7 @@ export function StakePage({
           <h2 className="text-[21px] font-medium text-ink">Staking vault is not live yet</h2>
           <p className="text-[15px] leading-relaxed text-ink-2">
             The vault is written and tested: one stake earns every registered partner token in parallel, and a new
-            partner can be added without anyone unstaking. Rewards are funded by partners — nothing is minted here. It
+            partner can be added without anyone unstaking. Rewards are funded — nothing is minted here. It
             stays unpublished until a partner funds a stream, rather than advertising a yield that does not exist.
           </p>
         </div>
@@ -1332,7 +1332,7 @@ export function StakePage({
     <div className="space-y-7">
       <PageHeader
         title="Stake"
-        description="Stake STERLING once and earn every partner reward stream in parallel. Rewards are funded by partners, never minted."
+        description="Stake STERLING once and earn every reward stream in parallel — plus a share of every exit penalty. Rewards are funded, never minted."
       />
 
       <FigureRow>

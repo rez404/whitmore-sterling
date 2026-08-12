@@ -23,6 +23,7 @@ import { TokenIcon } from "@/src/components/ui/token";
 import { CHAIN, type DeskTab, type PriceMap } from "@/src/lib/chain";
 import { explorer, priceFmt, short } from "@/src/lib/format";
 import { LENDING_POOL_ADDRESS, MARKETS, TREASURY_ADDRESS } from "@/src/markets";
+import { PLATFORM_TOKEN } from "@/src/farms";
 
 const NAV: { id: DeskTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -83,6 +84,7 @@ export function Sidebar({ tab, setTab }: { tab: DeskTab; setTab: (t: DeskTab) =>
       </nav>
 
       <div className="mt-auto flex flex-col gap-0.5">
+        <PlatformTokenRow />
         <a
           href={explorer(LENDING_POOL_ADDRESS, "address")}
           target="_blank"
@@ -241,6 +243,7 @@ export function MobileMenu({ tab, setTab }: { tab: DeskTab; setTab: (t: DeskTab)
             </nav>
 
             <div className="mt-5 flex flex-col gap-0.5 border-t border-line pt-4">
+              <PlatformTokenRow />
               <a
                 href={explorer(LENDING_POOL_ADDRESS, "address")}
                 target="_blank"
@@ -324,6 +327,7 @@ export function Topbar({
         />
       </label>
       <div className="ml-auto flex items-center gap-2">
+        <PlatformTokenChip className="hidden md:flex" />
         {account ? (
           <WalletMenu account={account} onDisconnect={onDisconnect} />
         ) : (
@@ -336,6 +340,79 @@ export function Topbar({
         )}
       </div>
     </header>
+  );
+}
+
+/**
+ * The platform token, always in reach.
+ *
+ * People need the contract address to add STERLING to a wallet or look it up, and
+ * hunting for it in the docs is friction at exactly the wrong moment. Clicking
+ * copies it. The price slot stays empty until the token has a real market — a
+ * bonding curve is not one, and printing a number from it would be inventing a
+ * price the market has not set.
+ */
+export function PlatformTokenChip({ className, price }: { className?: string; price?: number | null }) {
+  const [copied, setCopied] = React.useState(false);
+  if (!PLATFORM_TOKEN) return null;
+
+  return (
+    <button
+      type="button"
+      title={PLATFORM_TOKEN}
+      onClick={() => {
+        navigator.clipboard?.writeText(PLATFORM_TOKEN);
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1600);
+      }}
+      className={cn(
+        "flex h-9 shrink-0 items-center gap-2 rounded-md border border-line bg-surface px-2.5 text-[14px] transition-colors hover:border-line-strong",
+        className,
+      )}
+    >
+      <TokenIcon symbol="STERLING" size="sm" />
+      <span className="font-semibold text-ink">STERLING</span>
+      {price != null && <span className="tabular-nums text-ink-2">{priceFmt(price)}</span>}
+      {copied ? (
+        <span className="text-[13px] text-accent">Copied</span>
+      ) : (
+        <Copy className="size-3.5 text-ink-4" />
+      )}
+    </button>
+  );
+}
+
+/** Same token, as a row for the sidebar and menu footers. */
+function PlatformTokenRow() {
+  const [copied, setCopied] = React.useState(false);
+  if (!PLATFORM_TOKEN) return null;
+  return (
+    <div className="flex items-center gap-2.5 px-3 py-1.5">
+      <TokenIcon symbol="STERLING" size="md" />
+      <span className="min-w-0 flex-1">
+        <span className="block text-[14px] font-medium text-ink-2">STERLING</span>
+        <button
+          type="button"
+          onClick={() => {
+            navigator.clipboard?.writeText(PLATFORM_TOKEN);
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 1600);
+          }}
+          className="block truncate font-mono text-[11.5px] text-ink-4 transition-colors hover:text-accent"
+        >
+          {copied ? "Address copied" : short(PLATFORM_TOKEN)}
+        </button>
+      </span>
+      <a
+        href={explorer(PLATFORM_TOKEN, "address")}
+        target="_blank"
+        rel="noreferrer"
+        aria-label="STERLING on the explorer"
+        className="shrink-0 text-ink-4 transition-colors hover:text-ink-2"
+      >
+        <ExternalLink className="size-3.5" />
+      </a>
+    </div>
   );
 }
 
