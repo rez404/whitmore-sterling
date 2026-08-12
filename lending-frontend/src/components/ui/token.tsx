@@ -14,9 +14,11 @@ const SIZES = { xs: "size-4", sm: "size-5", md: "size-7", lg: "size-9", xl: "siz
 const EXTENSIONS = ["svg", "png"] as const;
 
 // The platform token has no listing to pull a logo from — it wears the house mark.
+// WETH is ETH with a wrapper; showing it a different mark would only confuse.
 const OVERRIDES: Record<string, string> = {
   STERLING: "/wolf.svg",
   WHIT: "/wolf.svg",
+  WETH: "/tokens/ETH.svg",
 };
 
 export function TokenIcon({

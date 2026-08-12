@@ -1161,6 +1161,8 @@ type RewardRow = {
   earned: bigint;
   perDay: bigint;
   active: boolean;
+  /** Has this stream ever been funded? "Ended" is a lie before the first one. */
+  funded: boolean;
   /** DEX spot mark, used only to show what a reward is worth. */
   priceUsd?: number;
 };
@@ -1172,9 +1174,9 @@ type RewardRow = {
  * entirely — a preview can never be mistaken for live data by a real user.
  */
 const PREVIEW_REWARDS: RewardRow[] = [
-  { token: "0x020bfC650A365f8BB26819deAAbF3E21291018b4", symbol: "CASHCAT", decimals: 18, earned: 18420n * 10n ** 18n, perDay: 71428n * 10n ** 18n, active: true, priceUsd: 0.1445 },
-  { token: "0x39dBED3a2bd333467115dE45665cC57F813C4571", symbol: "PONS", decimals: 18, earned: 2140n * 10n ** 18n, perDay: 8571n * 10n ** 18n, active: true, priceUsd: 0.04761 },
-  { token: "0xe934e36A439C94017B64a3FecE66AF12099aBF50", symbol: "STONKBROKER", decimals: 18, earned: 940n * 10n ** 18n, perDay: 0n, active: false, priceUsd: 0.03527 },
+  { token: "0x020bfC650A365f8BB26819deAAbF3E21291018b4", symbol: "CASHCAT", decimals: 18, earned: 18420n * 10n ** 18n, perDay: 71428n * 10n ** 18n, active: true, funded: true, priceUsd: 0.1445 },
+  { token: "0x39dBED3a2bd333467115dE45665cC57F813C4571", symbol: "PONS", decimals: 18, earned: 2140n * 10n ** 18n, perDay: 8571n * 10n ** 18n, active: true, funded: true, priceUsd: 0.04761 },
+  { token: "0xe934e36A439C94017B64a3FecE66AF12099aBF50", symbol: "STONKBROKER", decimals: 18, earned: 940n * 10n ** 18n, perDay: 0n, active: false, funded: true, priceUsd: 0.03527 },
 ];
 const PREVIEW = {
   staked: 12500n * 10n ** 18n,
@@ -1248,6 +1250,7 @@ export function StakePage({
               earned: earnedMap.get(token.toLowerCase()) ?? 0n,
               perDay: BigInt(data.rate) * 86400n,
               active: Number(data.periodFinish) > now,
+              funded: Number(data.periodFinish) > 0,
             };
           }),
         );
@@ -1358,11 +1361,12 @@ export function StakePage({
 
       {!preview && !anyActive && rewards.length > 0 && (
         <Alert tone="warn" title="No reward stream running">
-          Staking is open, but nothing accrues until a partner funds a stream.
+          Staking is open and your stake is safe, but nothing accrues until a stream is funded. Exit penalties from
+          anyone who unstakes are still shared with you in the meantime.
         </Alert>
       )}
 
-      <Section title="Reward streams" meta={`${rewards.length} partner${rewards.length === 1 ? "" : "s"}`}>
+      <Section title="Reward streams" meta={`${rewards.length} token${rewards.length === 1 ? "" : "s"}`}>
         {rewards.length === 0 ? (
           <p className="py-2 text-[15px] text-ink-4">No partner tokens registered yet.</p>
         ) : (
@@ -1374,7 +1378,7 @@ export function StakePage({
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-semibold text-ink">{r.symbol}</p>
                   <p className="truncate text-[13px] text-ink-4">
-                    {r.active ? `${amt(r.perDay, 0, r.decimals)} / day` : "Stream ended"}
+                    {r.active ? `${amt(r.perDay, 0, r.decimals)} / day` : r.funded ? "Stream ended" : "Not funded yet"}
                     {r.priceUsd != null && <> · {priceFmt(r.priceUsd)}</>}
                   </p>
                 </div>
@@ -1391,7 +1395,7 @@ export function StakePage({
             className="hidden md:block"
             head={
               <>
-                <Th>Partner</Th>
+                <Th>Reward</Th>
                 <Th align="right">Price</Th>
                 <Th align="right">Rewards / day</Th>
                 <Th align="right">Claimable</Th>
@@ -1444,7 +1448,9 @@ export function StakePage({
                     )}
                   </Td>
                   <Td align="right">
-                    <Status tone={r.active ? "good" : "idle"}>{r.active ? "Streaming" : "Ended"}</Status>
+                    <Status tone={r.active ? "good" : "idle"}>
+                      {r.active ? "Streaming" : r.funded ? "Ended" : "Not funded"}
+                    </Status>
                   </Td>
                 </tr>
               ))}

@@ -24,12 +24,25 @@ export async function fetchUsdPrices(addresses: string[]): Promise<UsdPrices> {
     // A token can trade in several pools. Take the mark from the deepest one —
     // a thin pool's price is noise.
     const best: Record<string, { price: number; liquidity: number }> = {};
+    const consider = (addr: string | undefined, price: number, liquidity: number) => {
+      if (!addr || !Number.isFinite(price) || price <= 0) return;
+      const key = addr.toLowerCase();
+      if (!best[key] || liquidity > best[key].liquidity) best[key] = { price, liquidity };
+    };
+
     for (const p of pairs) {
-      const addr = p?.baseToken?.address?.toLowerCase();
-      const price = Number(p?.priceUsd);
       const liquidity = Number(p?.liquidity?.usd ?? 0);
-      if (!addr || !Number.isFinite(price) || price <= 0) continue;
-      if (!best[addr] || liquidity > best[addr].liquidity) best[addr] = { price, liquidity };
+      const baseUsd = Number(p?.priceUsd);
+      consider(p?.baseToken?.address, baseUsd, liquidity);
+
+      // The quote side needs deriving. WETH and USDG are almost always quoted
+      // against, never quoted — reading only `baseToken` left them with no price
+      // at all, which is why a WETH reward showed a blank mark. `priceNative` is
+      // the base priced in the quote, so base-in-USD ÷ that is the quote in USD.
+      const perQuote = Number(p?.priceNative);
+      if (Number.isFinite(perQuote) && perQuote > 0) {
+        consider(p?.quoteToken?.address, baseUsd / perQuote, liquidity);
+      }
     }
 
     const out: UsdPrices = {};
