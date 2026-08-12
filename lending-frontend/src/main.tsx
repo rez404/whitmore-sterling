@@ -2,6 +2,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserProvider, Contract, JsonRpcProvider, MaxUint256, formatUnits, parseUnits } from "ethers";
 import { LENDING_POOL_ADDRESS, MARKETS, MarketConfig, TREASURY_ADDRESS, USDG_ADDRESS } from "./markets";
+import { LP_VAULTS, VaultPool, STAKING_POOL, PLATFORM_TOKEN } from "./farms";
 import "./styles.css";
 
 declare global { interface Window { ethereum?: any } }
@@ -41,7 +42,7 @@ type PriceMap = Record<string, { price: number; stale: boolean; updatedAt: numbe
 type PoolState = { liquidity: bigint; totalDebt: bigint; totalSuppliedLiquidity: bigint; protocolReserves: bigint; borrowAprBps: bigint; owner: string; debtAsset: string; treasury: string; ethLiquidity: bigint; totalSuppliedEthLiquidity: bigint; ethSupported: boolean };
 
 type TxKind = "deposit" | "borrow" | "repay" | "withdraw" | "supply" | "withdrawLiquidity" | "supplyEth" | "withdrawEth";
-type DeskTab = "dashboard" | "borrow" | "lending" | "swap" | "education" | "suits" | "documentation";
+type DeskTab = "dashboard" | "borrow" | "lending" | "swap" | "farms" | "stake" | "education" | "suits" | "documentation";
 
 const CHAIN = {
   id: 4663n,
@@ -102,6 +103,26 @@ const POOL_ABI = [
   "function withdrawCollateral(address,uint256)",
   "function borrow(address,uint256)",
   "function repay(uint256)",
+];
+
+const VAULT_ABI = [
+  "function deposit(uint256,uint256,uint256,uint256) returns (uint256)",
+  "function withdraw(uint256,uint256,uint256) returns (uint256,uint256)",
+  "function balanceOf(address) view returns (uint256)",
+  "function totalSupply() view returns (uint256)",
+  "function positionLiquidity() view returns (uint128)",
+  "function performanceFeeBps() view returns (uint256)",
+];
+const STAKING_ABI = [
+  "function stake(uint256)",
+  "function withdraw(uint256)",
+  "function getReward()",
+  "function balanceOf(address) view returns (uint256)",
+  "function totalSupply() view returns (uint256)",
+  "function earned(address) view returns (uint256)",
+  "function rewardRate() view returns (uint256)",
+  "function periodFinish() view returns (uint256)",
+  "function performanceFeeBps() view returns (uint256)",
 ];
 
 const READ_RPC = typeof window === "undefined" ? CHAIN.rpc : `${window.location.origin}/api/rpc`;
@@ -443,6 +464,49 @@ function App() {
     });
   }
 
+  async function vaultDeposit(pool: VaultPool, amount0: bigint, amount1: bigint) {
+    return run("Depositing liquidity", async () => {
+      const { signer, addr } = await ensureWalletReady();
+      const v = new Contract(pool.vault, VAULT_ABI, signer);
+      const pairs: [string, bigint][] = [[pool.token0, amount0], [pool.token1, amount1]];
+      for (const [tk, amt] of pairs) {
+        if (amt > 0n) {
+          const allowance = BigInt(await new Contract(tk, ERC20_ABI, provider).allowance(addr, pool.vault));
+          if (allowance < amt) { setPending("Approving token (one-time)"); const at = await new Contract(tk, ERC20_ABI, signer).approve(pool.vault, MaxUint256); await at.wait(); }
+        }
+      }
+      setPending("Confirm deposit in wallet");
+      await v.deposit.staticCall(amount0, amount1, 0, 0);
+      const tx = await v.deposit(amount0, amount1, 0, 0);
+      setTxHash(tx.hash); await tx.wait();
+      return "Deposited liquidity into the vault.";
+    });
+  }
+  async function vaultWithdraw(pool: VaultPool, shares: bigint) {
+    return run("Withdrawing", async () => {
+      const { signer } = await ensureWalletReady();
+      const v = new Contract(pool.vault, VAULT_ABI, signer);
+      await v.withdraw.staticCall(shares, 0, 0);
+      const tx = await v.withdraw(shares, 0, 0);
+      setTxHash(tx.hash); await tx.wait();
+      return "Withdrew liquidity from the vault.";
+    });
+  }
+  async function stakeAction(kind: "stake" | "unstake" | "claim", amount: bigint) {
+    return run(kind === "claim" ? "Claiming rewards" : kind === "stake" ? "Staking" : "Unstaking", async () => {
+      const { signer, addr } = await ensureWalletReady();
+      const s = new Contract(STAKING_POOL, STAKING_ABI, signer);
+      if (kind === "stake") {
+        const allowance = BigInt(await new Contract(PLATFORM_TOKEN, ERC20_ABI, provider).allowance(addr, STAKING_POOL));
+        if (allowance < amount) { setPending("Approving (one-time)"); const at = await new Contract(PLATFORM_TOKEN, ERC20_ABI, signer).approve(STAKING_POOL, MaxUint256); await at.wait(); }
+        setPending("Confirm stake in wallet");
+        const tx = await s.stake(amount); setTxHash(tx.hash); await tx.wait(); return "Staked platform token.";
+      }
+      if (kind === "unstake") { const tx = await s.withdraw(amount); setTxHash(tx.hash); await tx.wait(); return "Unstaked platform token."; }
+      const tx = await s.getReward(); setTxHash(tx.hash); await tx.wait(); return "Claimed partner rewards.";
+    });
+  }
+
   const health = accountState?.healthFactor === undefined || accountState.healthFactor > 10n ** 30n ? "∞" : Number(formatUnits(accountState.healthFactor, 18)).toFixed(2);
   const price = oracle ? Number(oracle.price) / 10 ** Number(oracle.decimals) : undefined;
   const utilization = pool && pool.totalSuppliedLiquidity > 0n ? Number(pool.totalDebt * 10000n / pool.totalSuppliedLiquidity) / 100 : 0;
@@ -465,6 +529,8 @@ function App() {
         <button className={tab === "borrow" ? "active" : ""} onClick={() => setTab("borrow")}><span>⊕</span>Borrow</button>
         <button className={tab === "lending" ? "active" : ""} onClick={() => setTab("lending")}><span>◈</span>Lending</button>
         <button className={tab === "swap" ? "active" : ""} onClick={() => setTab("swap")}><span>⇄</span>Swap</button>
+        <button className={tab === "farms" ? "active" : ""} onClick={() => setTab("farms")}><span>⛏</span>Farms</button>
+        <button className={tab === "stake" ? "active" : ""} onClick={() => setTab("stake")}><span>◆</span>Stake</button>
         <button className={tab === "education" ? "active" : ""} onClick={() => setTab("education")}><span>◎</span>Learn</button>
         <button className={tab === "suits" ? "active" : ""} onClick={() => setTab("suits")}><span>♛</span>Suits</button>
         <button className={tab === "documentation" ? "active" : ""} onClick={() => setTab("documentation")}><span>▤</span>Documentation</button>
@@ -515,6 +581,10 @@ function App() {
       />}
 
       {tab === "swap" && <SwapPanel market={market} prices={prices} amount={swapAmount} setAmount={setSwapAmount} connect={() => run("Connecting wallet", async () => { await connect(); return "Wallet connected."; })} account={account} debtDecimals={debtDecimals} pending={pending} sushiSwap={sushiSwap} />}
+
+      {tab === "farms" && <FarmsPanel account={account} connect={() => run("Connecting wallet", async () => { await connect(); return "Wallet connected."; })} pending={pending} debtDecimals={debtDecimals} prices={prices} deposit={vaultDeposit} withdraw={vaultWithdraw} />}
+
+      {tab === "stake" && <StakePanel account={account} connect={() => run("Connecting wallet", async () => { await connect(); return "Wallet connected."; })} pending={pending} action={stakeAction} />}
 
       {tab === "lending" && <section className="panel lp-panel">
         <div className="panel-head"><span>Liquidity Desk</span><b>USDG supply · {pool ? pct(pool.borrowAprBps) + " borrow APR" : "APR loading"}</b></div>
@@ -778,6 +848,112 @@ function SwapPanel({ market, prices, amount, setAmount, connect, account, debtDe
         <button type="button" onClick={() => navigator.clipboard?.writeText(outMarket.token)}>Copy {outMarket.symbol} address</button>
       </div>
     </div>
+  </section>;
+}
+
+function VaultPosition({ pool, account, pending, withdraw }: { pool: VaultPool; account: string; pending: string; withdraw: (pool: VaultPool, shares: bigint) => Promise<void> }) {
+  const [shares, setShares] = React.useState(0n);
+  React.useEffect(() => {
+    if (!account || !pool.vault) return;
+    let cancelled = false;
+    new Contract(pool.vault, VAULT_ABI, provider).balanceOf(account).then((b: bigint) => { if (!cancelled) setShares(BigInt(b)); }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [pool.vault, account]);
+  if (!account || shares === 0n) return <p className="muted-note">No vault position yet.</p>;
+  return <div className="farm-position"><span>Your shares: <b>{Number(formatUnits(shares, 18)).toLocaleString(undefined, { maximumFractionDigits: 6 })}</b></span><button type="button" disabled={!!pending} onClick={() => withdraw(pool, shares)}>Withdraw all</button></div>;
+}
+
+function FarmsPanel({ account, connect, pending, debtDecimals, prices, deposit, withdraw }: { account: string; connect: () => void; pending: string; debtDecimals: number; prices: PriceMap; deposit: (pool: VaultPool, a0: bigint, a1: bigint) => Promise<void>; withdraw: (pool: VaultPool, shares: bigint) => Promise<void> }) {
+  const [openSym, setOpenSym] = React.useState("");
+  const [amtStock, setAmtStock] = React.useState("");
+  const [amtUsdg, setAmtUsdg] = React.useState("");
+  const live = LP_VAULTS.filter((v) => v.vault);
+  const doDeposit = async (pool: VaultPool) => {
+    const stockIsToken0 = pool.token0.toLowerCase() === pool.stock.toLowerCase();
+    let stockAmt = 0n; let usdgAmt = 0n;
+    try { stockAmt = parseUnits(amtStock || "0", 18); } catch { stockAmt = 0n; }
+    try { usdgAmt = parseUnits(amtUsdg || "0", debtDecimals); } catch { usdgAmt = 0n; }
+    await deposit(pool, stockIsToken0 ? stockAmt : usdgAmt, stockIsToken0 ? usdgAmt : stockAmt);
+  };
+  return <section className="panel farms-panel">
+    <div className="panel-head"><span>Farms · RWA liquidity vaults</span><b>{live.length} live · {LP_VAULTS.length - live.length} launching</b></div>
+    <p className="muted-note">Deposit a Robinhood stock token + USDG into a Sushi V3 vault and earn real trading fees from volume. The vault auto-compounds fees and keeps a 10% platform fee. Full-range, non-directional.</p>
+    <div className="farm-list">
+      {LP_VAULTS.map((pool) => {
+        const isLive = !!pool.vault;
+        const isOpen = openSym === pool.symbol;
+        const price = prices[pool.symbol]?.price;
+        return <div className={`farm-item ${isOpen ? "open" : ""}`} key={pool.symbol}>
+          <button className="farm-row" type="button" onClick={() => { setOpenSym(isOpen ? "" : pool.symbol); setAmtStock(""); setAmtUsdg(""); }} disabled={!isLive}>
+            <span className="farm-pair"><b>{pool.symbol} / USDG</b><small>{pool.name}</small></span>
+            <span>{price ? priceFmt(price) : "—"}</span>
+            <span>0.30% fee</span>
+            <span className={isLive ? "farm-live" : "farm-soon"}>{isLive ? "Live" : "Launching"}</span>
+            <span>{isLive ? (isOpen ? "Close" : "Manage") : "Soon"}</span>
+          </button>
+          {isOpen && isLive && <div className="farm-expand">
+            <div className="farm-deposit">
+              <label>{pool.symbol}<input value={amtStock} onChange={(e) => setAmtStock(e.target.value.replace(/[^0-9.]/g, ""))} inputMode="decimal" placeholder="0.0" /></label>
+              <label>USDG<input value={amtUsdg} onChange={(e) => setAmtUsdg(e.target.value.replace(/[^0-9.]/g, ""))} inputMode="decimal" placeholder="0.0" /></label>
+              <button className="primary" type="button" disabled={!!pending || !account} onClick={() => account ? doDeposit(pool) : connect()}>{account ? "Deposit liquidity" : "Connect wallet"}</button>
+            </div>
+            <VaultPosition pool={pool} account={account} pending={pending} withdraw={withdraw} />
+          </div>}
+        </div>;
+      })}
+    </div>
+  </section>;
+}
+
+function StakePanel({ account, connect, pending, action }: { account: string; connect: () => void; pending: string; action: (kind: "stake" | "unstake" | "claim", amount: bigint) => Promise<void> }) {
+  const live = !!STAKING_POOL;
+  const [staked, setStaked] = React.useState(0n);
+  const [earned, setEarned] = React.useState(0n);
+  const [rewardRate, setRewardRate] = React.useState(0n);
+  const [amount, setAmount] = React.useState("");
+  React.useEffect(() => {
+    if (!live) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const s = new Contract(STAKING_POOL, STAKING_ABI, provider);
+        const [bal, ern, rate] = await Promise.all([
+          account ? s.balanceOf(account) : Promise.resolve(0n),
+          account ? s.earned(account) : Promise.resolve(0n),
+          s.rewardRate(),
+        ]);
+        if (!cancelled) { setStaked(BigInt(bal)); setEarned(BigInt(ern)); setRewardRate(BigInt(rate)); }
+      } catch { /* not deployed / rpc hiccup */ }
+    };
+    load();
+    const id = window.setInterval(load, 30000);
+    return () => { cancelled = true; window.clearInterval(id); };
+  }, [account, live]);
+
+  if (!live) {
+    return <section className="panel stake-panel">
+      <div className="panel-head"><span>Stake</span><b>Platform token → partner rewards</b></div>
+      <div className="stake-launch"><b>Launching soon</b><span>Stake the Whitmore Sterling platform token to earn a partner reward token. The pool is built and ready — rewards activate once a partner funds it, and the contract earns nothing until then (no emissions). A 10% platform fee applies to rewards when live.</span></div>
+    </section>;
+  }
+  let parsed = 0n;
+  try { parsed = parseUnits(amount || "0", 18); } catch { parsed = 0n; }
+  const noRewards = rewardRate === 0n;
+  return <section className="panel stake-panel">
+    <div className="panel-head"><span>Stake</span><b>Platform token → partner rewards</b></div>
+    <dl className="stats-grid">
+      <Stat label="Your stake" value={account ? amt(staked) : "Connect wallet"} />
+      <Stat label="Claimable rewards" value={account ? amt(earned) : "—"} />
+      <Stat label="Rewards status" value={noRewards ? "No active rewards" : "Streaming"} tone={noRewards ? "warn" : "good"} />
+      <Stat label="Platform fee" value="10%" />
+    </dl>
+    <div className="stake-form">
+      <input value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))} inputMode="decimal" placeholder="0.0" aria-label="Amount to stake/unstake" />
+      <button className="primary" type="button" disabled={!!pending || !account} onClick={() => account ? action("stake", parsed) : connect()}>{account ? "Stake" : "Connect wallet"}</button>
+      <button type="button" disabled={!!pending || !account || staked === 0n} onClick={() => action("unstake", parsed > 0n && parsed <= staked ? parsed : staked)}>Unstake</button>
+      <button type="button" disabled={!!pending || !account || earned === 0n} onClick={() => action("claim", 0n)}>Claim</button>
+    </div>
+    {noRewards && <p className="muted-note">No partner reward is streaming yet — staking is open, but earns nothing until a partner funds the pool.</p>}
   </section>;
 }
 
